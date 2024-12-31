@@ -1,0 +1,10 @@
+jgb>=0.1.21
+PySide6==6.7.2
+QtPy==2.4.1
+opencv-contrib-python==4.10.0.84
+opencv-python==4.10.0.84
+tenacity==8.5.0
+loguru==0.7.2
+pydantic==2.8.2
+transitions==0.9.1
+pyqtgraph==0.13.7
