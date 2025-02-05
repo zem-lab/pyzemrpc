@@ -120,6 +120,10 @@ class ZemRpcDevice:
         self.parser = ProtocolParser()
         self.rpc_builder = JsonRpcBuilder()
 
+    def update_remote_addr(self, addr: Tuple[str, int]):
+        self.m.addr = addr
+        self.builder.ip, self.builder.port = self.socket.sock.getsockname()
+
     def build_handshake_request(self):
         self.builder.ip, self.builder.port = self.socket.sock.getsockname()
         return self.builder.build_handshake_request()

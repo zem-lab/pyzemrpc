@@ -78,6 +78,7 @@ class ZemApi:
         self.machine = ZemApiMachine()
         self.img_processor_mgr = ZemImageProcessorManager()
         self.m.api_state = self.machine.api_state()
+        self.machine.subscribe(self.api_state_changed)
 
         self._init_sync = False
         if (nav_param := app_cfg.cfg_db.kv_db.get_obj("nav_param_calibed", NavParam)) is not None:
@@ -91,7 +92,7 @@ class ZemApi:
         self.m.api_state = event_data.state.value
 
     def update_remote_addr(self, addr: Tuple[str, int]):
-        self.device.m.addr = addr
+        self.device.update_remote_addr(addr)
         self.machine.disable()
         self.machine.enable()
         # TODO 如果支持RPC接口，一次性同步状态信息

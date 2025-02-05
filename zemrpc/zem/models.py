@@ -16,6 +16,7 @@ from jgb.util.pydantic_util import DefaultModel, NumpyNDArray
 from jgb.util.enum_util import EnumWithCode
 
 from zemrpc.zem import zem_util as zu
+from zemrpc.zem.zem_image_processor import normalize_with_drop
 
 XY = collections.namedtuple("XY", ["x", "y"])
 Bounds = collections.namedtuple("Bounds", ["xmin", "ymin", "xmax", "ymax"])
@@ -29,11 +30,11 @@ class NavParam(DefaultModel):
 
 
 class StagePos(DefaultModel):
-    x: float
-    y: float
-    z: float
-    r: float
-    t: float
+    x: float = Field(default=0)
+    y: float = Field(default=0)
+    z: float = Field(default=0)
+    r: float = Field(default=0)
+    t: float = Field(default=0)
 
     def __str__(self):
         return ",".join(map(str, [self.x, self.y]))
@@ -168,7 +169,9 @@ class ZemImage(DefaultModel):
         meta = {k.value: str(v) for k, v in meta.items()}
         meta.update(kwargs.get("meta", {}))
         zu.write_zem_img_with_meta(png, self.img, meta)
-
+        
+        img =normalize_with_drop(self.img)
+        cv_util.imwrite(png.parent / f'{png.stem}.u8.png', img)
 
 class NavImage(DefaultModel):
     ctime: float = Field(default=None)
