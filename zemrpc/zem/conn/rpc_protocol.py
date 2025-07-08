@@ -41,6 +41,11 @@ class RpcSnapResp(RpcResp):
         scan_um_height = self.result["meta"]["zem"]["imaging"]["ScanHeight"]
         rot_degree = self.result["meta"]["zem"]["imaging"]["Rotation"]
 
+        if x.lower() == 'nan':
+            x = 0
+        if y.lower() == 'nan':
+            y = 0
+            
         xmin = x - scan_um_width / 2
         xmax = x + scan_um_width / 2
         ymin = y - scan_um_height / 2
