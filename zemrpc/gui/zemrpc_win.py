@@ -99,5 +99,10 @@ class ZemRpcWidget(QWidget):
         zem_api.update_remote_addr(addr)
 
     def _slot_btn_zem_sync(self):
+        ctx.async_wrapper(self._do_sync)()
+
+    def _do_sync(self):
         zem_api.ensure_api_state_idel()
-        ctx.async_wrapper(zem_api.sync)()
+        zem_api.sync()
+        if zem_api.m.nav_img is not None:
+            self.nav_img_viewer.update_nav_img(zem_api.m.nav_img)

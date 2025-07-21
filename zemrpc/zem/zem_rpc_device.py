@@ -20,7 +20,7 @@ from zemrpc.zem.conn.rw import ReadWriteService
 from zemrpc.zem.context import ctx
 from zemrpc.zem.conn.img_receiver import ImgReceiver
 from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, NavParam, ScanInfo, SnapArgs, StagePos, ZemException
-from zemrpc.zem.conn.protocol import EnumCmd, EnumStageStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
+from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumStageStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
 from zemrpc.zem.conn.pubsub import PubSub
 from zemrpc.zem.conn.rpc_protocol import JsonRpcBuilder, RespProtocolNg, RpcSnapResp
 from zemrpc.zem.conn.udp_socket import UdpSocket
@@ -243,6 +243,30 @@ class ZemRpcDevice:
         resp = self.send(self.builder.build_set_beam_size(bs))
         if resp.is_ack_ok():
             self.m.beam_size = bs
+
+    def set_autofocus(self):
+        self.ensure_af_done()
+        resp = self.send(self.builder.build_autofocus())
+        if resp.is_ack_ok():
+            ...
+
+    def get_autofocus_status(self):
+        resp = self.send(self.builder.build_check_autofocus())
+        return resp.parse_autofocus_status()
+
+    def ensure_af_done(self, timeout=60):
+        st = time.time()
+        status = self.get_autofocus_status()
+        while status != EnumAutofocusStatus.Idle:
+            time.sleep(1)
+            status = self.get_autofocus_status()
+            if timeout < time.time() - st:
+                raise ZemException("等待自动对焦结束超时", ZemException.Code.SvrError)
+
+    def get_ob(self):
+        resp = self.send(self.builder.build_get_ob())
+        self.m.ob = resp.parse_ob()
+        return self.m.ob
 
     def set_ob(self, ob: int):
         if ob <= 0:

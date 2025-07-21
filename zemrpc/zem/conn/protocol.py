@@ -114,45 +114,75 @@ class EnumErrorCode(EnumWithCode):
 
 # fmt: off
 class EnumCmd(Enum):
-    InvalidCmd        = "InvalidCmd",                   False, 1_000, "无效命令"
-    Handshake         = "ZepTools handshake request",   False, 1_000, "握手请求"
-    HandshakeResp     = "ZepTools Handshake",           False, 1_000, "握手请求回包"
-    StatusCheck       = "StatusCheck",   False, 100,      "获取服务端状态"
-    ServerName        = "ServerName",    False, 100,      "获取服务主机名称"
-    GetImg            = "GetImg",        False, 100,      "请求发送当前内存中的图片"
-    VideoPlay         = "VideoPlay",     False, 500,      "播放视频"
-    IsVideoAlive      = "IsVideoAlive",  False, 100,      "获取视频状态"
-    Snap              = "Snap",          True,  60_000,   "拍摄一张图片"
-    SnapCancel        = "SnapCancel",    False, 500,      "取消拍摄"
-    GetWD             = "GetWD",         False, 100,      "获取工作距离"
-    GetCofPS          = "GetCofPS",      False, 100,      "获取像素脉冲系数"
-    GetEDChanel       = "GetEDChanel",   False, 100,      "获取电子信号通道"
-    SetEDChanel       = "SetEDChanel",   True,  100,      "设置电子信号通道"
-    SetRotation       = "SetRotation",   True,  100,      "设置扫描场旋转"
-    GetRotation       = "GetRotation",   False, 100,      "获取扫描场旋转"
-    SetOB             = "SetOB",         True,  100,      "设置物镜值"
-    SetContrast       = "SetContrast",   True,  100,      "设置对比度"
-    SetBrightness     = "SetBrightness", True,  100,      "设置亮度"
-    GetSECV           = "GetSECV",       False, 100,      "获取SE收集电压"
-    SetSECV           = "SetSECV",       True,  10_000,   "设置SE收集电压"
-    GetSEGain         = "GetSEGain",     False, 100,      "获取SE增益"
-    SetSEGain         = "SetSEGain",     True,  100,      "设置SE增益"
-    GetVAC            = "GetVAC",        False, 100,      "获取真空度"
-    GetMag            = "GetMag",        False, 100,      "获取放大倍数"
-    SetMag            = "SetMag",        True,  100,      "设置放大倍数"
-    GetBeamSz         = "GetBeamSz",     False, 100,      "获取束斑大小"
-    SetBeamSz         = "SetBeamSz",     True,  100,      "设置束斑大小"
-    SetIe             = "SetIe",         True,  100,      "设置束流大小"
-    GetHV             = "GetHV",         False, 1_000,    "获取加速电压"
-    SetHV             = "SetHV",         True,  20_000,   "设置加速电压"
-    GetStagePos       = "GetStagePos",   False, 100,      "获取视场坐标"
-    SetStagePos       = "SetStagePos",   True,  100,      "设置视场坐标"
-    GetNavImg         = "GetNavImg",     False, 30_000,   "获取导航图片"
-    GetNavPara        = "GetNavPara",    False, 100,      "获取光导系数"
-    GetStgStatus      = "GetStgStatus",  False, 200,      "获取样品台状态"
-    GetScanInfo       = "GetScanInfo",   False, 100,      "获取扫描场信息"
-    GetModel          = "GetModel",      False, 100,      "获取型号"
-    ZemRpc            = "ZemRpc",        True,  100,      "ZemRpc"
+    InvalidCmd        = "InvalidCmd",                   False, 1_000,    "无效命令"
+    Handshake         = "ZepTools handshake request",   False, 1_000,    "握手请求"
+    HandshakeResp     = "ZepTools Handshake",           False, 1_000,    "握手请求回包"
+    StatusCheck       = "StatusCheck",                  False, 100,      "获取服务端状态"
+    ServerName        = "ServerName",                   False, 100,      "获取服务主机名称"
+    GetImg            = "GetImg",                       False, 100,      "请求发送当前内存中的图片"
+    VideoPlay         = "VideoPlay",                    False, 500,      "播放视频"
+    IsVideoAlive      = "IsVideoAlive",                 False, 100,      "获取视频状态"
+    Snap              = "Snap",                         True,  60_000,   "拍摄一张图片"
+    SnapCancel        = "SnapCancel",                   False, 500,      "取消拍摄"
+    GetWD             = "GetWD",                        False, 100,      "获取工作距离"
+    SetWD             = "SetWD",                        True,  100,      "设置工作距离"
+    GetCofPS          = "GetCofPS",                     False, 100,      "获取像素脉冲系数"
+    GetEDChanel       = "GetEDChanel",                  False, 100,      "获取电子信号通道"
+    SetEDChanel       = "SetEDChanel",                  True,  100,      "设置电子信号通道"
+    SetRotation       = "SetRotation",                  True,  100,      "设置扫描场旋转"
+    GetRotation       = "GetRotation",                  False, 100,      "获取扫描场旋转"
+    GetOB             = "GetOB",                        False, 100,      "获取物镜值"
+    SetOB             = "SetOB",                        True,  100,      "设置物镜值"
+    GetAST            = "GetAST",                       False, 100,      "获取像散"
+    SetAST            = "SetAST",                       True,  100,      "设置像散"
+    GetImgSz          = "GetImgSz",                     False, 100,      "获取图片尺寸"
+    SetImgSz          = "SetImgSz",                     True,  100,      "设置图片尺寸"
+    GetWindowPos      = "GetWindowPos",                 False, 100,      "获取小窗位置"
+    SetWindowPos      = "SetWindowPos",                 True,  100,      "设置小窗位置"
+    SetContrast       = "SetContrast",                  True,  100,      "设置对比度"
+    SetBrightness     = "SetBrightness",                True,  100,      "设置亮度"
+    GetSECV           = "GetSECV",                      False, 100,      "获取SE收集电压"
+    SetSECV           = "SetSECV",                      True,  10_000,   "设置SE收集电压"
+    GetSEGain         = "GetSEGain",                    False, 100,      "获取SE增益"
+    SetSEGain         = "SetSEGain",                    True,  100,      "设置SE增益"
+    GetVAC            = "GetVAC",                       False, 100,      "获取真空度"
+    GetMag            = "GetMag",                       False, 100,      "获取放大倍数"
+    SetMag            = "SetMag",                       True,  100,      "设置放大倍数"
+    GetBeamSz         = "GetBeamSz",                    False, 100,      "获取束斑大小"
+    SetBeamSz         = "SetBeamSz",                    True,  100,      "设置束斑大小"
+    SetIe             = "SetIe",                        True,  100,      "设置束流大小"
+    GetHV             = "GetHV",                        False, 1_000,    "获取加速电压"
+    SetHV             = "SetHV",                        True,  20_000,   "设置加速电压"
+    GetStagePos       = "GetStagePos",                  False, 100,      "获取视场坐标"
+    SetStagePos       = "SetStagePos",                  True,  100,      "设置视场坐标"
+    GetNavImg         = "GetNavImg",                    False, 30_000,   "获取导航图片"
+    GetNavPara        = "GetNavPara",                   False, 100,      "获取光导系数"
+    GetStgStatus      = "GetStgStatus",                 False, 200,      "获取样品台状态"
+    GetScanInfo       = "GetScanInfo",                  False, 100,      "获取扫描场信息"
+    GetPixelSz        = "GetPixelSz",                   False, 100,      "获取像素尺寸um"
+    RequestOpenVac    = "RequestOpenVac",               True,  100,      "请求结束换样"
+    RequestCloseVac   = "RequestCloseVac",              True,  100,      "请求开始换样"
+    SetStigX          = "SetStigX",                     True,  100,      "设置像散X"
+    GetStigX          = "GetStigX",                     False, 100,      "获取像散X"
+    SetStigY          = "SetStigY",                     True,  100,      "设置像散Y"
+    GetStigY          = "GetStigY",                     False, 100,      "获取像散Y"
+    GetGunVac         = "GetGunVac",                    False, 100,      "获取枪头真空"
+    GetSamVac         = "GetSamVac",                    False, 100,      "获取样品仓真空"
+    AutoFocus         = "AutoFocus",                    False, 100,      "自动对焦"
+    CheckAutoFocus    = "CheckAutoFocus",               False, 100,      "自动对焦是否结束"
+    SetStageXPos      = "SetStageXPos",                 True,  100,      "设置X坐标"
+    GetStageXStatus   = "GetStageXStatus",              False, 100,      "获取X坐标"
+    SetStageYPos      = "SetStageYPos",                 True,  100,      "设置Y坐标"
+    GetStageYStatus   = "GetStageYStatus",              False, 100,      "获取Y坐标"
+    SetStageZPos      = "SetStageZPos",                 True,  100,      "设置Z坐标"
+    GetStageZStatus   = "GetStageZStatus",              False, 100,      "获取Z坐标"
+    SetStageRPos      = "SetStageRPos",                 True,  100,      "设置R坐标"
+    GetStageRStatus   = "GetStageRStatus",              False, 100,      "获取R坐标"
+    SetStageTPos      = "SetStageTPos",                 False, 100,      "设置T坐标"
+    GetStageTStatus   = "GetStageTStatus",              False, 100,      "获取T坐标"
+    SetAutoSnapTask   = "SetAutoSnapTask",              True,  100,      "设置自动拍图任务"
+    GetModel          = "GetModel",                     False, 100,      "获取型号"
+    ZemRpc            = "ZemRpc",                       True,  100,      "ZemRpc"
 
     @property
     def cmd(self):
@@ -181,6 +211,12 @@ class EnumStatus(Enum):
 class EnumStageStatus(Enum):
     Idle = 1  # 1: 脱机, 已到达指定位置
     Running = 0  # 0: 激活，运行中
+    Unknown = 999
+
+
+class EnumAutofocusStatus(Enum):
+    Idle = 0
+    Running = 1
     Unknown = 999
 
 
@@ -239,7 +275,7 @@ class ProtocolBuilder:
         return self.build_set(EnumCmd.SetIe, f"{value}")
 
     def build_set_beam_size(self, sz: EnumBeamSize):
-        return self.build_set(EnumCmd.SetBeamSz, f"{sz.bs}")
+        return self.build_set(EnumCmd.SetBeamSz, f"{sz.bs()}")
 
     def build_get_beam_size(self):
         return self.build_get(EnumCmd.GetBeamSz)
@@ -277,6 +313,9 @@ class ProtocolBuilder:
         # value in 0 ~ 100
         return self.build_set(EnumCmd.SetContrast, f"{value}")
 
+    def build_get_ob(self):
+        return self.build_get(EnumCmd.GetOB)
+
     def build_set_ob(self, value: int):
         value = math_util.clamp(value, 2, 65535)
         return self.build_set(EnumCmd.SetOB, f"{value}")
@@ -284,6 +323,10 @@ class ProtocolBuilder:
     def build_set_ob_pct(self, value):
         value = math_util.clamp(value, 2 / 65535 * 100, 100)
         return self.build_set(EnumCmd.SetOB, f"{value:.6f}")
+
+    def build_set_wd(self, value: float):
+        value = math_util.clamp(value, 3, 50)
+        return self.build_set(EnumCmd.SetWD, f"{value:.6f}")
 
     def build_set_rotation(self, degree: int):
         # value in degree
@@ -307,6 +350,15 @@ class ProtocolBuilder:
 
     def build_snap_cancel(self):
         return self.build_get(EnumCmd.SnapCancel)
+
+    def build_set_auto_snap_task(self, csv_file):
+        return self.build_set(EnumCmd.SetAutoSnapTask, str(csv_file))
+
+    def build_autofocus(self):
+        return self.build_get(EnumCmd.AutoFocus)
+
+    def build_check_autofocus(self):
+        return self.build_get(EnumCmd.CheckAutoFocus)
 
     def build_is_video_alive(self):
         return self.build_get(EnumCmd.IsVideoAlive)
@@ -354,6 +406,8 @@ class ProtocolBuilder:
         return self.build_set(cmd, "")
 
     def build_set(self, cmd: EnumCmd, args: str) -> Request:
+        if cmd == EnumCmd.SetAutoSnapTask:
+            args = base64.b64encode(args.encode())
         return Request(cmd, self._build(f"{cmd.cmd}:{args}"))
 
 
@@ -505,12 +559,18 @@ class RespPacket:
     def parse_stage_status(self) -> EnumStageStatus:
         return EnumStageStatus(int(self._parse_1()))
 
+    def parse_autofocus_status(self) -> EnumAutofocusStatus:
+        return EnumAutofocusStatus(int(self._parse_1()))
+
     def parse_hv(self):
         v, i = self._parse_2()
         return HvInfo(acc_v=float(v), beam_i=float(i))
 
     def parse_wd(self) -> float:
         return float(self._parse_1())
+
+    def parse_ob(self) -> int:
+        return int(self._parse_1())
 
     def parse_mag(self) -> float:
         return float(self._parse_1())

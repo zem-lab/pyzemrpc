@@ -87,6 +87,7 @@ class ZemApi:
 
         self.get_stage_pos = self.device.get_stage_pos
         self.video_play_on = self.device.video_play_on
+        self.get_ob = self.device.get_ob
 
     def api_state_changed(self, event_data: EventData):
         self.m.api_state = event_data.state.value
@@ -164,13 +165,15 @@ class ZemApi:
         self.sync_scan_field()
 
     def get_nav_img(self) -> NavImage:
+        img = self.device.get_nav_img()
+        if img is None:
+            return
+
         if self.m.use_calib_nav_param:
-            img = self.device.get_nav_img()
             nav = NavImage(ctime=time.time(), shape=img.shape[:2], nav_param=self.m.nav_param_calibed, img=img)
             logger.debug("use nav_param_calibed")
         else:
             self.m.nav_param = self.device.get_nav_param()
-            img = self.device.get_nav_img()
             nav = NavImage(ctime=time.time(), shape=img.shape[:2], nav_param=self.m.nav_param, img=img)
             logger.debug("get and use nav_param")
         nav.dump_img(ctx.logdir / "nav.png")

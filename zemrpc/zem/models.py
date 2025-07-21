@@ -169,9 +169,10 @@ class ZemImage(DefaultModel):
         meta = {k.value: str(v) for k, v in meta.items()}
         meta.update(kwargs.get("meta", {}))
         zu.write_zem_img_with_meta(png, self.img, meta)
-        
-        img =normalize_with_drop(self.img)
-        cv_util.imwrite(png.parent / f'{png.stem}.u8.png', img)
+
+        img = normalize_with_drop(self.img)
+        cv_util.imwrite(png.parent / f"{png.stem}.u8.png", img)
+
 
 class NavImage(DefaultModel):
     ctime: float = Field(default=None)
@@ -235,6 +236,13 @@ class EnumBeamSize(EnumWithCode):
     @property
     def name_cn(self):
         return self.value[-1]
+
+    @classmethod
+    def from_name_cn(cls, code):
+        for e in cls:
+            if e.value[-1] == code:
+                return e
+        return cls.Unk
 
 
 class IdxGen:
