@@ -301,3 +301,7 @@ class ZemException(Exception):
     @classmethod
     def zem_api_not_ready(cls, msg):
         return cls(msg, ZemException.Code.ApiNotReady)
+
+    @classmethod
+    def snap_ng_failed(cls, msg):
+        return cls(msg, ZemException.Code.SvrError)

@@ -43,7 +43,7 @@ def clean_build(c):
 
 
 @task(pre=[git_info, clean_build])
-def bdist_wheel(c, docs=False):
+def build(c, docs=False):
     r = c.run(f"{sys.executable} setup.py bdist_wheel")
     file_util.write_text_lines(PROJ_HOME / "build/build.log", [r.stdout])
     if docs:

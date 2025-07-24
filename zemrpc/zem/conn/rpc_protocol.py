@@ -30,6 +30,9 @@ class Snap(Req):
 
 class RpcSnapResp(RpcResp):
 
+    def success(self):
+        return "img" in self.result
+
     def parse_image(self):
         img = cv_util.base64_to_cv2(self.result["img"])
         return img
@@ -41,11 +44,12 @@ class RpcSnapResp(RpcResp):
         scan_um_height = self.result["meta"]["zem"]["imaging"]["ScanHeight"]
         rot_degree = self.result["meta"]["zem"]["imaging"]["Rotation"]
 
-        if x.lower() == 'nan':
+        if isinstance(x, str) and x.lower() == "nan":
             x = 0
-        if y.lower() == 'nan':
+
+        if isinstance(y, str) and y.lower() == "nan":
             y = 0
-            
+
         xmin = x - scan_um_width / 2
         xmax = x + scan_um_width / 2
         ymin = y - scan_um_height / 2

@@ -2,28 +2,22 @@
 # -*- coding: utf-8 -*-
 # tr!bf tribf@tribf.com
 
-from typing import Callable
-from concurrent.futures import ThreadPoolExecutor
-from qtpy.QtCore import QObject, Signal
-
-from jgb.util.thread_util import PyThreadPoolTask
+from jgb.util.dds_util import BaseAppContext
 
 from zemrpc import app_cfg
 
 
-class SignalBus(QObject):
-    cmd_send = Signal(object)
-    cmd_rcv = Signal(object)
+class ZemApiContext(BaseAppContext):
+    """
+    ZemApiContext is a singleton context for managing ZemApi instances.
+    """
 
-
-class Context:
     def __init__(self):
-        self.executor = ThreadPoolExecutor(max_workers=4)
-        self.logdir = app_cfg.log_dir
-        self.signals = SignalBus()
+        super().__init__(max_workers=2)
 
-    def async_wrapper(self, handler: Callable, exception_handler=None):
-        return PyThreadPoolTask(self.executor, handler, exception_handler)
+    @property
+    def logdir(self):
+        return app_cfg.log_dir
 
 
-ctx = Context()
+ctx = ZemApiContext()

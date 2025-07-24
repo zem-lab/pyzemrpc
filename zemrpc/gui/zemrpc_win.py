@@ -2,19 +2,80 @@
 # -*- coding: utf-8 -*-
 # tr!bf tribf@tribf.com
 
-from qtpy.QtCore import QSignalBlocker
-from qtpy.QtWidgets import QWidget, QListView, QComboBox
+from loguru import logger
+import concurrent.futures
+from qtpy.QtCore import Qt, QSignalBlocker, QTimer
+from qtpy.QtWidgets import QWidget, QListView, QComboBox, QPushButton
 
 from jgb.gui.qt import qt_util
+from jgb.gui.qt.dds_util import Attrs2QtValue
+from jgb.gui.qt.qt_model import QSignalEmitter
 
-from zemrpc.gui import ui_utils
 from zemrpc.zem.context import ctx
+from zemrpc.gui import ui_utils
 from zemrpc.zem.zem_api import zem_api
-from zemrpc.zem.conn.protocol import EnumCmd
+from zemrpc.zem.conn.protocol import EnumCmd, EnumVideoStatus
 
 from .widgets.zem_img_viewer import ZemImgViewer
 from .widgets.nav_img_viewer import NavImgViewer
 from .zemrpc_win_ui import Ui_Form
+
+
+class AsyncTaskExecutor:
+    def __init__(self):
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        self.active_tasks = {}  # 存储活跃任务
+
+    def execute_async(self, button: QPushButton, task_func, callback=None, loading_text="执行中..."):
+        # 防止重复点击
+        task_id = id(button)
+        if task_id in self.active_tasks and not self.active_tasks[task_id].done():
+            return
+
+        # 保存按钮原始状态
+        original_text = button.text()
+        button.setEnabled(False)
+        button.setText(loading_text)
+
+        # 提交任务
+        future = self.executor.submit(self._safe_execute, task_func)
+        self.active_tasks[task_id] = future
+
+        # 创建定时器检查完成状态
+        timer = QTimer()
+        timer.timeout.connect(lambda: self._check_task_done(task_id, timer, button, original_text, callback))
+        timer.start(100)
+
+    def _safe_execute(self, task_func):
+        try:
+            result = task_func()
+            return True, result
+        except Exception as e:
+            logger.warning(f"任务执行失败: {e}")
+            return False, str(e)
+
+    def _check_task_done(self, task_id, timer, button, original_text, callback):
+        future = self.active_tasks.get(task_id)
+        if future and future.done():
+            timer.stop()
+
+            try:
+                success, result = future.result()
+                if callback:
+                    callback(success, result)
+            except Exception as e:
+                logger.warning(f"获取任务结果失败: {e}")
+
+            finally:
+                # 恢复按钮状态
+                button.setEnabled(True)
+                button.setText(original_text)
+                # 清理任务记录
+                if task_id in self.active_tasks:
+                    del self.active_tasks[task_id]
+
+    def shutdown(self):
+        self.executor.shutdown(wait=False)
 
 
 class ZemRpcWidget(QWidget):
@@ -24,8 +85,12 @@ class ZemRpcWidget(QWidget):
         self.ui = Ui_Form()
         self.ui.setupUi(self)
 
+        self.emitter = QSignalEmitter(True)
         self.zem_img_viewer = ZemImgViewer(self.ui.tab_sem_img)
         self.nav_img_viewer = NavImgViewer(self.ui.tab_nav_img)
+
+        # 创建异步任务执行器
+        self.async_executor = AsyncTaskExecutor()
 
         self.init_ss()
         self.init_ui()
@@ -33,12 +98,22 @@ class ZemRpcWidget(QWidget):
     def init_ss(self):
         self.ui.btn_send.clicked.connect(self._slot_btn_send)
         self.ui.btn_handshake.clicked.connect(self._slot_btn_handshake)
+        self.ui.btn_snap.clicked.connect(self._slot_btn_snap)
         self.ui.cbox_sem_servers.currentTextChanged.connect(self._slot_cbox_sem_servers_txt_changed)
+        # 拍照
+        self.ui.cbox_mag.currentTextChanged.connect(self._slot_cbox_mag_txt_changed)
+        self.ui.input_mag.returnPressed.connect(self._slot_input_mag_confirmed)
+        self.ui.input_field_rotation.returnPressed.connect(self._slot_input_field_rotation_confirmed)
+        self.ui.btn_play.clicked.connect(self._slot_btn_play)
+        self.ui.cbox_cap_avg.currentIndexChanged.connect(self._slot_cbox_cap_avg_txt_changed)
+        self.ui.cbox_cap_size.currentIndexChanged.connect(self._slot_cbox_cap_size_txt_changed)
+        self.ui.ckb_snap_save.stateChanged.connect(self._slot_ckb_snap_save_state_changed)
 
         self.ui.btn_zem_sync.clicked.connect(self._slot_btn_zem_sync)
 
-        ctx.signals.cmd_send.connect(self.ui.lbl_cmd_send.setText)
-        ctx.signals.cmd_rcv.connect(self.ui.lbl_cmd_rcv.setText)
+        ctx.sub_computed_attr(zem_api.device.m.cmd_rcv, Attrs2QtValue(self, self.ui.lbl_cmd_rcv.setText, emitter=self.emitter))
+        ctx.sub_computed_attr(zem_api.device.m.cmd_send, Attrs2QtValue(self, self.ui.lbl_cmd_send.setText, emitter=self.emitter))
+        ctx.sub_attr(zem_api.m, "zem_img", Attrs2QtValue(self, self.zem_img_viewer.update_sem_image, emitter=self.emitter))
 
     def init_ui(self):
         self._init_cbox_cmds()
@@ -72,17 +147,45 @@ class ZemRpcWidget(QWidget):
         cbox.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
 
     def update_cbox_sem_servers(self, servers):
+        records = {self.ui.cbox_sem_servers.itemText(i) for i in range(self.ui.cbox_sem_servers.count())}
         for addr in servers:
             ip, port = addr
             key = f"{ip}:{port}"
-            for i in range(self.ui.cbox_sem_servers.count()):
-                if self.ui.cbox_sem_servers.itemText(i) == key:
-                    continue
+            if key in records:
+                continue
+            records.add(key)
             self.ui.cbox_sem_servers.addItem(key, addr)
 
     def _slot_btn_handshake(self):
-        servers = zem_api.handshake()
-        self.update_cbox_sem_servers(servers)
+        def handshake_task():
+            return zem_api.handshake()
+
+        def on_handshake_complete(success, result):
+            if success:
+                self.update_cbox_sem_servers(result)
+
+        self.async_executor.execute_async(button=self.ui.btn_handshake, task_func=handshake_task, callback=on_handshake_complete, loading_text="握手中...")
+
+    def _slot_btn_snap(self):
+        def snap_task():
+            zem_api.snap()
+
+        self.async_executor.execute_async(button=self.ui.btn_snap, task_func=snap_task, loading_text="采集中...")
+
+    def _slot_input_mag_confirmed(self):
+        zem_api.set_mag(ui_utils.parse_mag_str(self.ui.input_mag.text()))
+
+    def _slot_input_field_rotation_confirmed(self):
+        zem_api.set_field_rotation(int(self.ui.input_field_rotation.text()))
+
+    def _slot_btn_play(self):
+        status = zem_api.check_video_play()
+        if status == EnumVideoStatus.Running:
+            zem_api.video_play_off()
+            self.ui.btn_play.setText("播放")
+        else:
+            zem_api.video_play_on()
+            self.ui.btn_play.setText("暂停")
 
     def _slot_btn_send(self):
         cmd = self.ui.cbox_cmds.currentData()  # type: EnumCmd
@@ -98,11 +201,33 @@ class ZemRpcWidget(QWidget):
         addr = qt_util.get_cbox_metadata(self.ui.cbox_sem_servers)
         zem_api.update_remote_addr(addr)
 
-    def _slot_btn_zem_sync(self):
-        ctx.async_wrapper(self._do_sync)()
+    def _slot_cbox_mag_txt_changed(self, v: str):
+        mag = ui_utils.parse_mag_str(v)
+        zem_api.set_mag(mag)
+        with QSignalBlocker(self.ui.input_mag):
+            self.ui.input_mag.setText(str(mag))
 
-    def _do_sync(self):
-        zem_api.ensure_api_state_idel()
-        zem_api.sync()
-        if zem_api.m.nav_img is not None:
-            self.nav_img_viewer.update_nav_img(zem_api.m.nav_img)
+    def _slot_cbox_cap_avg_txt_changed(self, v: str):
+        zem_api.m.snap_args.pixel_avg = qt_util.get_cbox_metadata(self.sender())
+
+    def _slot_cbox_cap_size_txt_changed(self, v: str):
+        zem_api.m.snap_args.size = qt_util.get_cbox_metadata(self.sender())
+
+    def _slot_ckb_snap_save_state_changed(self, state):
+        zem_api.m.snap_args.save = state == Qt.CheckState.Checked.value
+
+    def _slot_btn_zem_sync(self):
+        def sync_task():
+            zem_api.ensure_api_state_idel()
+            zem_api.sync()
+            return zem_api.m.nav_img
+
+        def on_sync_complete(success, result):
+            if success and result is not None:
+                self.nav_img_viewer.update_nav_img(result)
+
+        self.async_executor.execute_async(button=self.ui.btn_zem_sync, task_func=sync_task, callback=on_sync_complete, loading_text="同步中...")
+
+    def closeEvent(self, event):
+        self.async_executor.shutdown()
+        super().closeEvent(event)

@@ -3,7 +3,6 @@
 # tr!bf tribf@tribf.com
 
 import re
-import math
 import json
 import base64
 import collections
@@ -12,8 +11,10 @@ from typing import Tuple
 from loguru import logger
 from enum import Enum
 from dataclasses import dataclass
+
 from jgb.util import math_util, json_util
 from jgb.util.enum_util import EnumWithCode
+from jgb.conn.pubsub import BaseRequest, BaseResponse
 
 from zemrpc.zem.models import NavParam, StagePos, ScanInfo, HvInfo, EnumImageSize, EnumBeamSize
 
@@ -220,6 +221,12 @@ class EnumAutofocusStatus(Enum):
     Unknown = 999
 
 
+class EnumVideoStatus(Enum):
+    Idle = 0
+    Running = 1
+    Unknown = 999
+
+
 class EnumEDChannel(Enum):
     BSE = 0
     SE = 1
@@ -230,12 +237,16 @@ class EnumImgDepth(Enum):
     U16 = 7
 
 
-class Request:
+class Request(BaseRequest):
     def __init__(self, cmd: EnumCmd, data: bytes):
+        super().__init__()
+
         self.cmd = cmd
-        self.name = self.cmd.name
         self.timeout = cmd.timeout / 1000  # ms -> s
         self.data = data
+
+    def get_pubsub_key(self) -> str:
+        return self.cmd.name
 
     def __repr__(self) -> str:
         if self.cmd == EnumCmd.ZemRpc:
@@ -486,7 +497,7 @@ class ReqPacket:
         return json.loads(s)
 
 
-class RespPacket:
+class RespPacket(BaseResponse):
     _re_img = re.compile(r"\$(.*):(.*):(.*):(\d+),(\d+),(\d+),(\d+),(.*)%")
     _re_1 = re.compile(r"\$(.*):(.*),(.*)%")
     _re_2 = re.compile(r"\$(.*):(.*),(.*),(.*)%")
@@ -494,21 +505,25 @@ class RespPacket:
     _re_scan_info = re.compile(r"\$GetScanInfo:(.*),(.*),(.*)%")
 
     def __init__(self, data: bytes):
+        super().__init__()
+
         self.data = data
         self.data_str = data.decode()
 
         self.cmd = self.parse_cmd()
-        self.name = self.cmd.name
 
         self.extra = {}
 
     def __repr__(self) -> str:
-        if self.cmd == EnumCmd.ZemRpc:
+        if self.cmd == EnumCmd.ZemRpc and not self.is_error():
             parts = self.data_str.split(",")
             payload = base64.b64decode(parts[0][8:]).decode()
             return f"{parts[0][:8]}:{payload},{','.join(parts[1:])}"
         else:
             return self.data_str
+
+    def get_pubsub_key(self) -> str:
+        return self.cmd.name
 
     def parse_cmd(self) -> EnumCmd:
         if self.data_str[1:].lower().startswith(EnumCmd.HandshakeResp.cmd.lower()):
@@ -561,6 +576,9 @@ class RespPacket:
 
     def parse_autofocus_status(self) -> EnumAutofocusStatus:
         return EnumAutofocusStatus(int(self._parse_1()))
+
+    def parse_video_status(self) -> EnumVideoStatus:
+        return EnumVideoStatus(int(self._parse_1()))
 
     def parse_hv(self):
         v, i = self._parse_2()

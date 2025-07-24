@@ -7,23 +7,24 @@ import json
 import time
 import copy
 import numpy as np
+import threading
 from loguru import logger
 from pydantic import Field
 from typing import List, Tuple
 from tenacity import retry, stop_after_attempt, wait_fixed, wait_random, before_sleep_log
 
-from jgb.util import cv_util, req_util, time_util
-from jgb.util.pydantic_util import DefaultModel
+from jgb.util import cv_util, req_util, time_util, os_util
+from jgb.util.dds_util import AppTreeNode, AppTreeNodeRequiredMixin
+from jgb.conn.rw_service import ReadWriteService
+from jgb.conn.pubsub import PubSub
+from jgb.conn.udp_socket import UdpSocket, UdpPacket
 
 from zemrpc import app_cfg
-from zemrpc.zem.conn.rw import ReadWriteService
 from zemrpc.zem.context import ctx
 from zemrpc.zem.conn.img_receiver import ImgReceiver
 from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, NavParam, ScanInfo, SnapArgs, StagePos, ZemException
 from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumStageStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
-from zemrpc.zem.conn.pubsub import PubSub
 from zemrpc.zem.conn.rpc_protocol import JsonRpcBuilder, RespProtocolNg, RpcSnapResp
-from zemrpc.zem.conn.udp_socket import UdpSocket
 from zemrpc.zem import zem_util as zu
 
 
@@ -33,7 +34,7 @@ class HandshakePubSub(PubSub):
         self.result = []
 
     def pub(self, resp: RespPacket):
-        if EnumCmd.HandshakeResp.name != resp.name:
+        if EnumCmd.HandshakeResp.name != resp.get_pubsub_key():
             return False
 
         self.result.append(resp)
@@ -44,31 +45,35 @@ class HandshakePubSub(PubSub):
         ...
 
 
-class GetImagePubSub(PubSub[Request, RespPacket]):
+class GetImagePubSub(PubSub):
     def __init__(self, request, is_newbee):
         super().__init__(request)
         self.is_newbee = is_newbee
 
     def pub(self, packet: RespPacket):
-        if packet.name != self.request.name:
+        if packet.get_pubsub_key() != self.request.get_pubsub_key():
             return False
 
         self.result = packet
         img_resp = packet.parse_img_resp()
         if img_resp is not None:
-            img_receiver = ImgReceiver(img_resp, self.img_received_handler, self.is_newbee)
-            ctx.async_wrapper(img_receiver)()
+            threading.Thread(target=self._receive_img, args=(img_resp,), daemon=True).start()
         else:
             self.notify_done()
 
         return True
+
+    def _receive_img(self, img_resp):
+        receiver = ImgReceiver(img_resp, self.img_received_handler, self.is_newbee)
+        receiver()
+        self.notify_done()
 
     def img_received_handler(self, img_receiver: ImgReceiver):
         self.result.extra["img"] = img_receiver.img
         self.notify_done()
 
 
-class ZemModel(DefaultModel):
+class ZemModel(AppTreeNode):
     model: str = Field(default="Unk")
     protocol_ng: RespProtocolNg = Field(default=None)
     addr: Tuple[str, int] = Field(default=("127.0.0.1", 61557))
@@ -83,6 +88,15 @@ class ZemModel(DefaultModel):
     scan_info: ScanInfo = Field(default=None)
     nav_param: NavParam = Field(default=None)
     stage_pos: StagePos = Field(default=None)
+
+    def cmd_rcv(self, cmd: str):
+        ctx.pub_computed_attr(self, "cmd_rcv", cmd)
+
+    def cmd_send(self, cmd: str):
+        ctx.pub_computed_attr(self, "cmd_send", cmd)
+
+    def data_rcv(self, data: bytes):
+        ctx.pub_computed_attr(self, "data_rcv", data)
 
     def is_stage_pos_unit_pulse(self):
         return self.model == "ZEM18OLD"
@@ -108,13 +122,15 @@ class ZemModel(DefaultModel):
         return FieldWithLoc(scan_info=self.scan_info, pos=self.stage_pos)
 
 
-class ZemRpcDevice:
-    def __init__(self, name: str):
+class ZemRpcDevice(AppTreeNodeRequiredMixin):
+    def __init__(self, name: str, **kwargs):
         self.name = name
-        self.m = ZemModel()
-        self.socket = UdpSocket("zem_rpc_socket")
+        self.m = ZemModel(ctx=ctx, node_name="zem_rpc_device")
+        self.n = ctx.add_node(self, parent=kwargs.pop("parent", None))
 
-        self.rws = ReadWriteService[Request, RespPacket](self.socket, self._do_framing, self._do_write)
+        self.socket = UdpSocket(ctx, "zem_rpc_socket", parent=self.n, ip=os_util.get_default_ip(), port=0)
+
+        self.rws = ReadWriteService[RespPacket](f"RWS-{self.m.node_name}", ctx, self.socket, self._do_framing, self._do_write)
 
         self.builder = ProtocolBuilder()
         self.parser = ProtocolParser()
@@ -134,6 +150,11 @@ class ZemRpcDevice:
 
     def video_play_on(self):
         return self.pubsub_send(self.builder.build_video_play())
+
+    def check_video_play(self):
+        resp = self.pubsub_send(self.builder.build_is_video_alive())
+        status = resp.parse_video_status()
+        return status
 
     def snap_simple(self, snap_args: SnapArgs):
         resp = self.send(self.builder.build_snap_simple(snap_args.pixel_avg, snap_args.size))
@@ -273,10 +294,16 @@ class ZemRpcDevice:
             return None
 
         resp = self.send(self.builder.build_set_ob_pct(ob / 65535 * 100))
-        # resp = self.send(self.builder.build_set_ob(ob))
         if resp.is_ack_ok():
             self.m.ob = ob
             return ob
+        return None
+
+    def set_field_rotation(self, degree: int):
+        resp = self.send(self.builder.build_set_rotation(degree))
+        if resp.is_ack_ok():
+            self.m.scan_info.rot_degree = degree
+            return degree
         return None
 
     def get_scan_info(self):
@@ -340,19 +367,18 @@ class ZemRpcDevice:
             ps = PubSub(req)
         return self.rws.pubsub_send(ps)
 
-    def _do_framing(self, pkt):
-        ts, addr, data = pkt
-        logger.debug(f"received udp data from {addr} {data.decode()}")
-
-        for packet in self.parser.append(addr, data):
+    def _do_framing(self, pkt: UdpPacket):
+        logger.debug(f'received udp data from {pkt.addr} "{pkt.data.decode()}"')
+        ret = []
+        for packet in self.parser.append(pkt.addr, pkt.data):
             resp = RespPacket(packet)
-            ctx.signals.cmd_rcv.emit(resp.data_str)
-            if not self.rws.pubsub_mgr.pub(resp):
-                logger.warning(f"got response without subscriber: {resp}")
+            self.m.cmd_rcv(resp.data_str)
+            ret.append(resp)
+        return ret
 
     def _do_write(self, req: Request):
-        ctx.signals.cmd_send.emit(req.data.decode())
+        self.m.cmd_send(req.data.decode())
         if req.cmd == EnumCmd.Handshake:
-            self.socket.broadcast(req.data)
+            self.socket.broadcast(req.data, self.m.addr[1])
         else:
-            self.socket.send(req.data, self.m.addr)
+            self.socket.write(req.data, addr=self.m.addr)

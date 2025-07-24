@@ -11,7 +11,7 @@ from transitions import Machine, EventData
 from tenacity import retry, stop_after_attempt, wait_fixed, wait_random
 
 from jgb.util import json_util
-from jgb.util.pydantic_util import DefaultModel
+from jgb.util.dds_util import AppTreeNode, AppTreeNodeRequiredMixin
 
 from zemrpc import app_cfg
 from zemrpc.zem.context import ctx
@@ -57,24 +57,26 @@ def ensure_sync_done(func):
     return wrapper
 
 
-class ZemApiModel(DefaultModel):
-    api_state: ZemState = Field(default=None)
+class ZemApiModel(AppTreeNode):
+    api_state: ZemState = Field(default=None, on_setattr=True)
 
     servers: List[Tuple[str, int]] = Field(default=None)
     nav_param: NavParam = Field(default=None)
     nav_param_calibed: NavParam = Field(default=None)
-    nav_img: NavImage = Field(default=None)
+    nav_img: NavImage = Field(default=None, on_setattr=True)
     use_calib_nav_param: bool = Field(default=False)
 
-    zem_img: ZemImage = Field(default=None)
-
+    zem_img: ZemImage = Field(default=None, on_setattr=True)
     snap_args: SnapArgs = Field(default=SnapArgs())
 
 
-class ZemApi:
+class ZemApi(AppTreeNodeRequiredMixin):
     def __init__(self):
-        self.m = ZemApiModel()
-        self.device = ZemRpcDevice(name="instrument")
+        self.m = ZemApiModel(ctx=ctx)
+        self.n = ctx.add_node(self)
+
+        self.device = ZemRpcDevice(name="instrument", parent=self.n)
+
         self.machine = ZemApiMachine()
         self.img_processor_mgr = ZemImageProcessorManager()
         self.m.api_state = self.machine.api_state()
@@ -87,7 +89,9 @@ class ZemApi:
 
         self.get_stage_pos = self.device.get_stage_pos
         self.video_play_on = self.device.video_play_on
+        self.check_video_play = self.device.check_video_play
         self.get_ob = self.device.get_ob
+        self.set_field_rotation = self.device.set_field_rotation
 
     def api_state_changed(self, event_data: EventData):
         self.m.api_state = event_data.state.value
@@ -176,13 +180,19 @@ class ZemApi:
             self.m.nav_param = self.device.get_nav_param()
             nav = NavImage(ctime=time.time(), shape=img.shape[:2], nav_param=self.m.nav_param, img=img)
             logger.debug("get and use nav_param")
-        nav.dump_img(ctx.logdir / "nav.png")
+
         self.m.nav_img = nav
         return self.m.nav_img
 
     def set_nav_param(self, p0x, p0y, cx, cy):
         self.m.nav_param_calibed = NavParam(p0x=p0x, p0y=p0y, cx=cx, cy=cy)
         app_cfg.cfg_db.kv_db.set_obj("nav_param_calibed", self.m.nav_param_calibed)
+
+    def video_play_off(self):
+        from zemrpc.zem.models import EnumImageSize
+
+        snap_args = SnapArgs(pixel_avg=7, size=EnumImageSize.S512x512)
+        zem_api.snap(snap_args=snap_args)
 
     def enable_calib_nav_param(self, enable):
         if not enable:
@@ -218,10 +228,10 @@ class ZemApi:
         else:
             zem_img = self.snap_v1(args, **kwargs)
 
+        self.m.zem_img = zem_img
+
         if args.save:
             zem_img.dump(ctx.logdir / "images")
-
-        self.m.zem_img = zem_img
 
         if kwargs.get("viedo_on", False):
             self.video_play_on()
@@ -238,6 +248,9 @@ class ZemApi:
 
     def snap_ng(self, snap_args: SnapArgs, **kwargs):
         resp = self.device.snap_rpc(snap_args.size.width, snap_args.size.height, snap_args.pixel_avg, snap_args.frame_avg)
+        if not resp.success():
+            raise ZemException.snap_ng_failed(f"ZEMRPC snap_ng failed: {resp.error}")
+
         img = resp.parse_image()
         bounds = resp.parse_img_bounds()
         meta = self.device.m.to_img_meta(snap_args.pixel_avg)

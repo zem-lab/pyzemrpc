@@ -27,3 +27,8 @@ def get_snap_size():
             continue
         sizes[s.name_cn] = s
     return sizes
+
+
+def parse_mag_str(mag_str):
+    tbl = {"k": 1000, "w": 10000, "x": 1}
+    return int(mag_str[:-1]) * tbl[mag_str[-1]]
