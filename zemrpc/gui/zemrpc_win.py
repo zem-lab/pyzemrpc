@@ -23,6 +23,23 @@ from .widgets.nav_img_viewer import NavImgViewer
 from .zemrpc_win_ui import Ui_Form
 
 
+class RecursivelyHandler:
+    def __init__(self, widget, handler):
+        self.widget = widget
+        self.handler = handler
+
+    def __call__(self):
+        import contextlib
+
+        value = self.widget.value()
+        with contextlib.nullcontext() if self.widget.signalsBlocked() else QSignalBlocker(self.widget):
+            self.handler(value)
+
+            cur_value = self.widget.value()
+            if value != cur_value:
+                self()
+
+
 class AsyncTaskExecutor:
     def __init__(self):
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
@@ -250,8 +267,13 @@ class ZemRpcWidget(QWidget):
         zem_api.m.snap_args.save = state == Qt.CheckState.Checked.value
 
     def _on_slider_ob_value_changed(self, value: float):
-        with ctx.signal_blocker(zem_api.device.m, "ob"):
-            zem_api.set_ob(int(value))
+        def handler(ob):
+            with ctx.signal_blocker(zem_api.device.m, "ob"):
+                print(ob)
+                zem_api.set_ob(int(ob))
+
+        rh = RecursivelyHandler(self.ui.slider_ob, handler)
+        ctx.async_wrapper(rh)()
 
     def _slot_btn_ob(self):
         def ob_task():
