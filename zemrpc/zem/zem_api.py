@@ -15,9 +15,9 @@ from jgb.util.dds_util import AppTreeNode, AppTreeNodeRequiredMixin
 
 from zemrpc import app_cfg
 from zemrpc.zem.context import ctx
-from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, NavImage, NavParam, SnapArgs, StageMoveDirection, StagePos, ZemException, ZemImage, ZemState
+from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, NavImage, NavParam, ScanInfo, SnapArgs, StageMoveDirection, StagePos, ZemException, ZemImage, ZemState
 from zemrpc.zem.conn.protocol import EnumCmd
-from zemrpc.zem.zem_image_processor import ZemImageProcessorManager
+from zemrpc.zem.zem_image_processor import ZemImageProcessorManager, normalize_with_drop
 from zemrpc.zem.zem_rpc_device import ZemRpcDevice
 
 
@@ -69,6 +69,11 @@ class ZemApiModel(AppTreeNode):
     zem_img: ZemImage = Field(default=None, on_setattr=True)
     snap_args: SnapArgs = Field(default=SnapArgs())
 
+    def field_with_loc(self, si: ScanInfo, pos: StagePos):
+        if si is None:
+            return
+        ctx.pub_computed_attr(self, "field_with_loc", FieldWithLoc(scan_info=si, pos=pos))
+
 
 class ZemApi(AppTreeNodeRequiredMixin):
     def __init__(self):
@@ -92,6 +97,8 @@ class ZemApi(AppTreeNodeRequiredMixin):
         self.check_video_play = self.device.check_video_play
         self.get_ob = self.device.get_ob
         self.set_field_rotation = self.device.set_field_rotation
+
+        self.update_img_processor(normalize_with_drop)
 
     def api_state_changed(self, event_data: EventData):
         self.m.api_state = event_data.state.value
@@ -125,6 +132,7 @@ class ZemApi(AppTreeNodeRequiredMixin):
     def stage_xy_goto(self, xy):
         self.ensure_api_state_idel()
         self.device.set_stage_pos(StagePos(x=xy[0], y=xy[1]))
+        self.m.field_with_loc(self.device.m.scan_info, self.device.m.stage_pos)
 
     @retry(reraise=True, stop=stop_after_attempt(3), wait=wait_fixed(1) + wait_random(0, 1))
     def stage_xy_goto_closed(self, xy, stable_after_idle_ms=0):
@@ -140,6 +148,18 @@ class ZemApi(AppTreeNodeRequiredMixin):
         if png:
             img.dump(png)
         return img
+
+    def mov_then_focus(self, xy, stable_after_idle_ms=0):
+        self.stage_xy_goto_closed(xy, stable_after_idle_ms)
+        self.run_autofocus()
+
+    def run_autofocus(self):
+        ob0 = self.device.get_ob()
+        self.device.set_autofocus()
+        self.device.ensure_af_done()
+        ob = self.device.get_ob()
+        logger.debug(f"autofocus done {ob0} -> {ob}")
+        return ob
 
     def stage_xy_rmove(self, direction: StageMoveDirection, value: float):
         x = self.device.m.stage_pos.x
@@ -159,10 +179,12 @@ class ZemApi(AppTreeNodeRequiredMixin):
     def set_mag(self, mag: int):
         self.device.set_mag(mag)
         self.device.get_scan_info()
+        self.m.field_with_loc(self.device.m.scan_info, self.device.m.stage_pos)
 
     def sync_scan_field(self):
         self.device.get_mag()
         self.device.get_scan_info()
+        self.m.field_with_loc(self.device.m.scan_info, self.device.m.stage_pos)
 
     def sync_stage_and_scan_field(self):
         self.device.get_stage_pos()
@@ -191,7 +213,7 @@ class ZemApi(AppTreeNodeRequiredMixin):
     def video_play_off(self):
         from zemrpc.zem.models import EnumImageSize
 
-        snap_args = SnapArgs(pixel_avg=7, size=EnumImageSize.S512x512)
+        snap_args = SnapArgs(pixel_avg=5, size=EnumImageSize.S512x512)
         zem_api.snap(snap_args=snap_args)
 
     def enable_calib_nav_param(self, enable):

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # tr!bf tribf@tribf.com
 
+from typing import cast
 from loguru import logger
 import concurrent.futures
 from qtpy.QtCore import Qt, QSignalBlocker, QTimer
@@ -13,6 +14,7 @@ from jgb.gui.qt.qt_model import QSignalEmitter
 
 from zemrpc.zem.context import ctx
 from zemrpc.gui import ui_utils
+from zemrpc.zem.models import StageMoveDirection
 from zemrpc.zem.zem_api import zem_api
 from zemrpc.zem.conn.protocol import EnumCmd, EnumVideoStatus
 
@@ -26,7 +28,7 @@ class AsyncTaskExecutor:
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         self.active_tasks = {}  # 存储活跃任务
 
-    def execute_async(self, button: QPushButton, task_func, callback=None, loading_text="执行中..."):
+    def execute_async(self, button: QPushButton, task_func, callback=None, loading_text="..."):
         # 防止重复点击
         task_id = id(button)
         if task_id in self.active_tasks and not self.active_tasks[task_id].done():
@@ -100,6 +102,8 @@ class ZemRpcWidget(QWidget):
         self.ui.btn_handshake.clicked.connect(self._slot_btn_handshake)
         self.ui.btn_snap.clicked.connect(self._slot_btn_snap)
         self.ui.cbox_sem_servers.currentTextChanged.connect(self._slot_cbox_sem_servers_txt_changed)
+        self.ui.btn_zem_sync.clicked.connect(self._slot_btn_zem_sync)
+
         # 拍照
         self.ui.cbox_mag.currentTextChanged.connect(self._slot_cbox_mag_txt_changed)
         self.ui.input_mag.returnPressed.connect(self._slot_input_mag_confirmed)
@@ -108,17 +112,46 @@ class ZemRpcWidget(QWidget):
         self.ui.cbox_cap_avg.currentIndexChanged.connect(self._slot_cbox_cap_avg_txt_changed)
         self.ui.cbox_cap_size.currentIndexChanged.connect(self._slot_cbox_cap_size_txt_changed)
         self.ui.ckb_snap_save.stateChanged.connect(self._slot_ckb_snap_save_state_changed)
+        self.ui.btn_remap.clicked.connect(self._slot_btn_remap)
 
-        self.ui.btn_zem_sync.clicked.connect(self._slot_btn_zem_sync)
+        # 对焦
+        self.ui.slider_ob.valueChanged.connect(self._on_slider_ob_value_changed)
+        self.ui.btn_ob.clicked.connect(self._slot_btn_ob)
+        self.ui.btn_af.clicked.connect(self._slot_btn_af)
+
+        # 样品台
+        self.ui.btn_stage_xy_pos.clicked.connect(self._slot_btn_stage_xy_pos)
+        self.ui.btn_stage_xy_goto.clicked.connect(self._slot_btn_stage_xy_goto)
+        self.ui.btn_stage_xy_move_up.clicked.connect(lambda _: self._slot_btn_stage_xy_move(StageMoveDirection.Up))
+        self.ui.btn_stage_xy_move_down.clicked.connect(lambda _: self._slot_btn_stage_xy_move(StageMoveDirection.Down))
+        self.ui.btn_stage_xy_move_left.clicked.connect(lambda _: self._slot_btn_stage_xy_move(StageMoveDirection.Left))
+        self.ui.btn_stage_xy_move_right.clicked.connect(lambda _: self._slot_btn_stage_xy_move(StageMoveDirection.Right))
+
+        # 导航图
+        self.ui.btn_get_nav_info.clicked.connect(self._slot_btn_get_nav_info)
 
         ctx.sub_computed_attr(zem_api.device.m.cmd_rcv, Attrs2QtValue(self, self.ui.lbl_cmd_rcv.setText, emitter=self.emitter))
         ctx.sub_computed_attr(zem_api.device.m.cmd_send, Attrs2QtValue(self, self.ui.lbl_cmd_send.setText, emitter=self.emitter))
         ctx.sub_attr(zem_api.m, "zem_img", Attrs2QtValue(self, self.zem_img_viewer.update_sem_image, emitter=self.emitter))
 
+        ctx.sub_attr(zem_api.m, "nav_img", Attrs2QtValue(self, self.nav_img_viewer.update_nav_img, emitter=self.emitter))
+        ctx.sub_computed_attr(zem_api.m.field_with_loc, Attrs2QtValue(self, self.nav_img_viewer.update_field_and_loc, emitter=self.emitter))
+        ctx.sub_attr(zem_api.device.m, "scan_info", Attrs2QtValue(self, self.update_scan_info, emitter=self.emitter))
+        ctx.sub_attr(zem_api.device.m, "stage_pos", Attrs2QtValue(self, self.update_stage_pos, emitter=self.emitter))
+        ctx.sub_attr(zem_api.device.m, "mag", Attrs2QtValue(self, self.update_mag, emitter=self.emitter))
+        ctx.sub_attr(zem_api.device.m, "ob", Attrs2QtValue(self, self.ui.slider_ob.setValue, emitter=self.emitter))
+
     def init_ui(self):
+        self.ui.tab_modules.setCurrentIndex(0)
+
         self._init_cbox_cmds()
         self._init_cbox_snap_args()
         self._init_cbox_mag()
+
+        self.ui.slider_ob.setRange(0, 65535)
+        self.ui.slider_ob.setMidValueLabel("32768")
+        self.ui.slider_ob.setValue(30000)
+        self.ui.slider_ob.setOrientation(Qt.Orientation.Horizontal)
 
     def _init_cbox_cmds(self):
         cbox = self.ui.cbox_cmds
@@ -216,17 +249,78 @@ class ZemRpcWidget(QWidget):
     def _slot_ckb_snap_save_state_changed(self, state):
         zem_api.m.snap_args.save = state == Qt.CheckState.Checked.value
 
+    def _on_slider_ob_value_changed(self, value: float):
+        with ctx.signal_blocker(zem_api.device.m, "ob"):
+            zem_api.set_ob(int(value))
+
+    def _slot_btn_ob(self):
+        def ob_task():
+            zem_api.get_ob()
+
+        self.async_executor.execute_async(button=self.ui.btn_ob, task_func=ob_task)
+
+    def _slot_btn_af(self):
+        def af_task():
+            zem_api.run_autofocus()
+
+        self.async_executor.execute_async(button=self.ui.btn_af, task_func=af_task)
+
     def _slot_btn_zem_sync(self):
         def sync_task():
             zem_api.ensure_api_state_idel()
             zem_api.sync()
             return zem_api.m.nav_img
 
-        def on_sync_complete(success, result):
-            if success and result is not None:
-                self.nav_img_viewer.update_nav_img(result)
+        self.async_executor.execute_async(button=self.ui.btn_zem_sync, task_func=sync_task)
 
-        self.async_executor.execute_async(button=self.ui.btn_zem_sync, task_func=sync_task, callback=on_sync_complete, loading_text="同步中...")
+    def _slot_btn_stage_xy_pos(self):
+        def stage_xy_pos_task():
+            zem_api.get_stage_pos()
+            zem_api.sync_scan_field()
+
+        def on_stage_xy_pos_complete(success, result):
+            if success:
+                self.update_stage_pos(result)
+
+        self.async_executor.execute_async(button=self.ui.btn_stage_xy_pos, task_func=stage_xy_pos_task, callback=on_stage_xy_pos_complete, loading_text="获取位置...")
+
+    def _slot_btn_stage_xy_goto(self):
+        def stage_xy_goto_task():
+            x, y = ui_utils.parse_stage_pos(self.ui.input_stage_xy_pos.text())
+            zem_api.stage_xy_goto((x, y))
+            return True, None
+
+        self.async_executor.execute_async(button=self.ui.btn_stage_xy_goto, task_func=stage_xy_goto_task)
+
+    def _slot_btn_stage_xy_move(self, direction: StageMoveDirection):
+        rval = float(self.ui.input_stage_xy_rval.text())
+        zem_api.stage_xy_rmove(direction, rval)
+
+    def _slot_btn_get_nav_info(self):
+        def get_nav_info():
+            zem_api.get_nav_img()
+            return True, None
+
+        self.async_executor.execute_async(button=self.ui.btn_stage_xy_goto, task_func=get_nav_info)
+
+    def _slot_btn_remap(self): ...
+
+    def update_scan_info(self, si):
+        from zemrpc.zem.models import ScanInfo
+
+        si = cast(ScanInfo, si)
+        self.ui.input_field_size.setText(f"{si.scan_um:.3f}")
+        self.ui.input_field_rotation.setText(f"{si.rot_degree:.3f}")
+
+    def update_stage_pos(self, pos):
+        from zemrpc.zem.models import StagePos
+
+        pos = cast(StagePos, pos)
+        self.ui.input_stage_xy_pos.setText(f"{ui_utils.stage_pos_str(pos.x, pos.y)}")
+
+    def update_mag(self, mag):
+        with QSignalBlocker(self.ui.input_mag):
+            self.ui.input_mag.setText(str(int(mag)))
 
     def closeEvent(self, event):
         self.async_executor.shutdown()

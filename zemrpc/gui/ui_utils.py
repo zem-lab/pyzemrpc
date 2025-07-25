@@ -18,6 +18,19 @@ def get_api_cmds():
     return cbox_cmds
 
 
+def parse_mag_str(mag_str):
+    tbl = {"k": 1000, "w": 10000, "x": 1}
+    return int(mag_str[:-1]) * tbl[mag_str[-1]]
+
+
+def stage_pos_str(x: float, y: float):
+    return f"{x:.3f},{y:.3f}"
+
+
+def parse_stage_pos(pos_str: str):
+    return list(map(float, pos_str.replace("，", ",").split(",")))
+
+
 def get_snap_size():
     from zemrpc.zem.models import EnumImageSize
 
@@ -29,6 +42,12 @@ def get_snap_size():
     return sizes
 
 
-def parse_mag_str(mag_str):
-    tbl = {"k": 1000, "w": 10000, "x": 1}
-    return int(mag_str[:-1]) * tbl[mag_str[-1]]
+def get_beam_size():
+    from zemrpc.zem.models import EnumBeamSize
+
+    sizes = []
+    for s in EnumBeamSize:
+        if s == EnumBeamSize.Unk:
+            continue
+        sizes.append(s)
+    return sizes

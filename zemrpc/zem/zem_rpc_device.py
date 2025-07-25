@@ -29,8 +29,8 @@ from zemrpc.zem import zem_util as zu
 
 
 class HandshakePubSub(PubSub):
-    def __init__(self, request):
-        super().__init__(request)
+    def __init__(self, request, **kwargs):
+        super().__init__(request, **kwargs)
         self.result = []
 
     def pub(self, resp: RespPacket):
@@ -46,8 +46,8 @@ class HandshakePubSub(PubSub):
 
 
 class GetImagePubSub(PubSub):
-    def __init__(self, request, is_newbee):
-        super().__init__(request)
+    def __init__(self, request, is_newbee, **kwargs):
+        super().__init__(request, **kwargs)
         self.is_newbee = is_newbee
 
     def pub(self, packet: RespPacket):
@@ -80,14 +80,15 @@ class ZemModel(AppTreeNode):
 
     ed_chanel: str = Field(default="BSE", init=False)
 
-    mag: float = Field(default=0)
-    beam_size: EnumBeamSize = Field(default=EnumBeamSize.Unk)
-    ob: int = Field(default=0)
+    mag: float = Field(default=0, on_setattr=True)
+    beam_size: EnumBeamSize = Field(default=EnumBeamSize.Unk, on_setattr=True)
+    ob: int = Field(default=0, on_setattr=True)
+    wd: float = Field(default=0, on_setattr=True)
 
-    hv_info: HvInfo = Field(default=None)
-    scan_info: ScanInfo = Field(default=None)
+    hv_info: HvInfo = Field(default=None, on_setattr=True)
+    scan_info: ScanInfo = Field(default=None, on_setattr=True)
     nav_param: NavParam = Field(default=None)
-    stage_pos: StagePos = Field(default=None)
+    stage_pos: StagePos = Field(default=None, on_setattr=True)
 
     def cmd_rcv(self, cmd: str):
         ctx.pub_computed_attr(self, "cmd_rcv", cmd)
@@ -337,13 +338,13 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
     @retry(reraise=True, stop=stop_after_attempt(3), wait=wait_fixed(1) + wait_random(0, 1), before_sleep=before_sleep_log(logger, log_level="DEBUG"))
     def pubsub_send(self, req: Request):
         if req.cmd == EnumCmd.Handshake:
-            ps = HandshakePubSub(req)
+            ps = HandshakePubSub(req, timeout=req.timeout_ms)
         elif req.cmd == EnumCmd.GetNavImg:
-            ps = GetImagePubSub(req, self.m.is_newbee())
+            ps = GetImagePubSub(req, self.m.is_newbee(), timeout=req.timeout_ms)
         elif req.cmd == EnumCmd.Snap:
-            ps = GetImagePubSub(req, self.m.is_newbee())
+            ps = GetImagePubSub(req, self.m.is_newbee(), timeout=req.timeout_ms)
         else:
-            ps = PubSub(req)
+            ps = PubSub(req, timeout=req.timeout_ms)
 
         resp = self.rws.pubsub_send(ps)
         if req.cmd != EnumCmd.Handshake and req.cmd != EnumCmd.ZemRpc:

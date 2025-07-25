@@ -154,6 +154,8 @@ class EnumCmd(Enum):
     SetIe             = "SetIe",                        True,  100,      "设置束流大小"
     GetHV             = "GetHV",                        False, 1_000,    "获取加速电压"
     SetHV             = "SetHV",                        True,  20_000,   "设置加速电压"
+    SetHvON           = "SetHvON",                      True,  3_000,    "启动高压"
+    SetHvOFF          = "SetHvOFF",                     False, 1_000,    "关闭高压"
     GetStagePos       = "GetStagePos",                  False, 100,      "获取视场坐标"
     SetStagePos       = "SetStagePos",                  True,  100,      "设置视场坐标"
     GetNavImg         = "GetNavImg",                    False, 30_000,   "获取导航图片"
@@ -242,8 +244,11 @@ class Request(BaseRequest):
         super().__init__()
 
         self.cmd = cmd
-        self.timeout = cmd.timeout / 1000  # ms -> s
         self.data = data
+
+    @property
+    def timeout_ms(self):
+        return self.cmd.timeout
 
     def get_pubsub_key(self) -> str:
         return self.cmd.name
