@@ -12,12 +12,10 @@ from matplotlib.backend_bases import MouseButton, MouseEvent, PickEvent
 from loguru import logger
 
 from jgb.gui.qt import qt_util
+from jgb.gui.qt.widgets.mpl_qpanel import QMplPanelWithToolbar
 
 from zemrpc.zem.models import FieldWithLoc, NavImage
 from zemrpc.zem.zem_api import zem_api
-
-from .mpl_panel import ViewerMplWithToolbar
-from .qt_popup_menu import popup_menu
 
 
 class NavCircleMarker:
@@ -31,7 +29,7 @@ class NavCircleMarker:
 
 class NavImgViewer:
     def __init__(self, panel):
-        self.widget, self.layout = qt_util.init_panel_with_widget(panel, ViewerMplWithToolbar)
+        self.widget, self.layout = qt_util.init_panel_with_widget(panel, QMplPanelWithToolbar)
         self.canvas = self.widget.plot_canvas
 
         self.btn = QToolButton(self.widget.navi_toolbar)
@@ -77,7 +75,7 @@ class NavImgViewer:
             return
 
         if event.button == MouseButton.RIGHT:
-            popup_menu(
+            qt_util.popup_menu(
                 self.canvas,
                 [
                     ("移动至此", functools.partial(self._slot_goto, (event.xdata, event.ydata))),
