@@ -154,7 +154,7 @@ class EnumCmd(Enum):
     SetIe             = "SetIe",                        True,  100,      "设置束流大小"
     GetHV             = "GetHV",                        False, 1_000,    "获取加速电压"
     SetHV             = "SetHV",                        True,  20_000,   "设置加速电压"
-    SetHvON           = "SetHvON",                      True,  3_000,    "启动高压"
+    SetHvON           = "SetHvON",                      False, 3_000,    "启动高压"
     SetHvOFF          = "SetHvOFF",                     False, 1_000,    "关闭高压"
     GetStagePos       = "GetStagePos",                  False, 100,      "获取视场坐标"
     SetStagePos       = "SetStagePos",                  True,  100,      "设置视场坐标"
@@ -282,6 +282,12 @@ class ProtocolBuilder:
     def build_set_hv(self, value: int):
         # value in Voltage
         return self.build_set(EnumCmd.SetHV, f"{value}")
+
+    def build_gun_on(self):
+        return self.build_get(EnumCmd.SetHvON)
+
+    def build_gun_off(self):
+        return self.build_get(EnumCmd.SetHvOFF)
 
     def build_get_hv(self):
         return self.build_get(EnumCmd.GetHV)

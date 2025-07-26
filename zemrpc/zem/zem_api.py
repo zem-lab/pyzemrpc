@@ -10,7 +10,7 @@ from typing import List, Tuple
 from transitions import Machine, EventData
 from tenacity import retry, stop_after_attempt, wait_fixed, wait_random
 
-from jgb.util import json_util
+from jgb.util import json_util, math_util
 from jgb.util.dds_util import AppTreeNode, AppTreeNodeRequiredMixin
 
 from zemrpc import app_cfg
@@ -92,6 +92,7 @@ class ZemApi(AppTreeNodeRequiredMixin):
             logger.debug(f"load last nav_param_calibed: {nav_param}")
             self.m.nav_param_calibed = nav_param
 
+        self.get_hv = self.device.get_hv
         self.get_stage_pos = self.device.get_stage_pos
         self.video_play_on = self.device.video_play_on
         self.check_video_play = self.device.check_video_play
@@ -107,6 +108,7 @@ class ZemApi(AppTreeNodeRequiredMixin):
         self.device.update_remote_addr(addr)
         self.machine.disable()
         self.machine.enable()
+        self._init_sync = False
         # TODO 如果支持RPC接口，一次性同步状态信息
 
     def send_cmd(self, cmd: EnumCmd, args: str = None):
@@ -180,6 +182,26 @@ class ZemApi(AppTreeNodeRequiredMixin):
         self.device.set_mag(mag)
         self.device.get_scan_info()
         self.m.field_with_loc(self.device.m.scan_info, self.device.m.stage_pos)
+
+    def set_hv(self, kv: float):
+        if not self._init_sync:
+            raise ZemException.zem_api_not_ready("Zem API 未初始化，请先同步状态")
+
+        kv = math_util.clamp(int(kv), 1, 30)
+        self.device.set_hv(kv)
+        # TODO wait
+
+    def set_gun(self, state: bool):
+        if not self._init_sync:
+            raise ZemException.zem_api_not_ready("Zem API 未初始化，请先同步状态")
+
+        if state:
+            self.device.gun_on()
+        else:
+            self.device.gun_off()
+
+        # TODO wait
+        # self.device.get_hv()
 
     def sync_scan_field(self):
         self.device.get_mag()
@@ -282,6 +304,8 @@ class ZemApi(AppTreeNodeRequiredMixin):
         return zem_img
 
     def sync(self):
+        self.ensure_api_state_idel()
+
         self.device.get_model()
         self.device.get_protocol_ng()
         # TODO 支持RPC时切换到RPC接口同步状态信息

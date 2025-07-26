@@ -121,6 +121,12 @@ class ZemRpcWidget(QWidget):
         self.ui.cbox_sem_servers.currentTextChanged.connect(self._slot_cbox_sem_servers_txt_changed)
         self.ui.btn_zem_sync.clicked.connect(self._slot_btn_zem_sync)
 
+        # 高压
+        self.ui.btn_hv_get.clicked.connect(zem_api.get_hv)
+        self.ui.btn_hv_set.clicked.connect(self._slot_btn_hv_set)
+        self.ui.btn_gun_on.clicked.connect(self._slot_btn_gun_on)
+        self.ui.btn_gun_off.clicked.connect(self._slot_btn_gun_off)
+
         # 拍照
         self.ui.cbox_mag.currentTextChanged.connect(self._slot_cbox_mag_txt_changed)
         self.ui.input_mag.returnPressed.connect(self._slot_input_mag_confirmed)
@@ -155,12 +161,13 @@ class ZemRpcWidget(QWidget):
         ctx.sub_computed_attr(zem_api.m.field_with_loc, Attrs2QtValue(self, self.nav_img_viewer.update_field_and_loc, emitter=self.emitter))
         ctx.sub_attr(zem_api.device.m, "scan_info", Attrs2QtValue(self, self.update_scan_info, emitter=self.emitter))
         ctx.sub_attr(zem_api.device.m, "stage_pos", Attrs2QtValue(self, self.update_stage_pos, emitter=self.emitter))
+        ctx.sub_attr(zem_api.device.m, "hv_info", Attrs2QtValue(self, self.update_hv_info, emitter=self.emitter))
         ctx.sub_attr(zem_api.device.m, "mag", Attrs2QtValue(self, self.update_mag, emitter=self.emitter))
         ctx.sub_attr(zem_api.device.m, "ob", Attrs2QtValue(self, self.ui.slider_ob.setValue, emitter=self.emitter))
 
     def init_ui(self):
         self.ui.tab_modules.setCurrentIndex(0)
-
+        self.ui.ipt_hv.setRange(0, 30)
         self._init_cbox_cmds()
         self._init_cbox_snap_args()
         self._init_cbox_mag()
@@ -289,11 +296,28 @@ class ZemRpcWidget(QWidget):
 
     def _slot_btn_zem_sync(self):
         def sync_task():
-            zem_api.ensure_api_state_idel()
             zem_api.sync()
-            return zem_api.m.nav_img
+            return True, None
 
         self.async_executor.execute_async(button=self.ui.btn_zem_sync, task_func=sync_task)
+
+    def _slot_btn_hv_set(self):
+        if not qt_util.show_confirmed_box(self):
+            return
+
+        def hv_set_task():
+            zem_api.set_hv(self.ui.ipt_hv.value())
+            return True, None
+
+        self.async_executor.execute_async(button=self.ui.btn_hv_set, task_func=hv_set_task)
+
+    def _slot_btn_gun_on(self):
+        if not qt_util.show_confirmed_box(self):
+            return
+
+    def _slot_btn_gun_off(self):
+        if not qt_util.show_confirmed_box(self):
+            return
 
     def _slot_btn_stage_xy_pos(self):
         def stage_xy_pos_task():
@@ -333,6 +357,13 @@ class ZemRpcWidget(QWidget):
         si = cast(ScanInfo, si)
         self.ui.input_field_size.setText(f"{si.scan_um:.3f}")
         self.ui.input_field_rotation.setText(f"{si.rot_degree:.3f}")
+
+    def update_hv_info(self, hv_info):
+        from zemrpc.zem.models import HvInfo
+
+        hv_info = cast(HvInfo, hv_info)
+        with QSignalBlocker(self.ui.ipt_hv):
+            self.ui.ipt_hv.setValue(hv_info.kv)
 
     def update_stage_pos(self, pos):
         from zemrpc.zem.models import StagePos

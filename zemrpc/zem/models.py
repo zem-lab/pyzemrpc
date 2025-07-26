@@ -72,6 +72,7 @@ class HvInfo(DefaultModel):
     acc_v: float
     beam_i: float
 
+    @property
     def kv(self):
         return round(self.acc_v / 1000)
 
@@ -140,7 +141,7 @@ class ImageMeta(DefaultModel):
     def to_png_meta(self):
         meta = {
             ImageMetaItem.Model: self.model,
-            ImageMetaItem.AccVoltage: self.hv_info.kv(),
+            ImageMetaItem.AccVoltage: self.hv_info.kv,
             ImageMetaItem.AvgLenth: self.avg_length,
             ImageMetaItem.Date: self.date,
             ImageMetaItem.Detector: self.detector,
