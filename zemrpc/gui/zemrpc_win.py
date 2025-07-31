@@ -111,8 +111,8 @@ class ZemRpcWidget(QWidget):
         # 创建异步任务执行器
         self.async_executor = AsyncTaskExecutor()
 
-        self.init_ss()
         self.init_ui()
+        self.init_ss()
 
     def init_ss(self):
         self.ui.btn_send.clicked.connect(self._slot_btn_send)
