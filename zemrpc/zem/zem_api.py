@@ -204,9 +204,6 @@ class ZemApi(AppTreeNodeRequiredMixin):
         if wait:
             self.device.ensure_hv_ready()
 
-        # TODO wait
-        # self.device.get_hv()
-
     def sync_scan_field(self):
         self.device.get_mag()
         self.device.get_scan_info()

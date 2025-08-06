@@ -246,31 +246,6 @@ class EnumBeamSize(EnumWithCode):
         return cls.Unk
 
 
-class IdxGen:
-    def __init__(self, init: int = 0):
-        self._idx = init
-
-    @property
-    def vpp(self):
-        idx = self._idx
-        self._idx += 1
-        return idx
-
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, v, info) -> "IdxGen":
-        if isinstance(v, int):
-            return cls(v)
-        return v
-
-    @staticmethod
-    def idx_gen_encode(obj: "IdxGen"):
-        return obj._idx
-
-
 class ZemState(Enum):
     Disable = "Disable"
     Idel = "Idel"

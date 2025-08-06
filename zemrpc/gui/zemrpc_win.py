@@ -11,6 +11,7 @@ from qtpy.QtWidgets import QWidget, QListView, QComboBox, QPushButton
 from jgb.gui.qt import qt_util
 from jgb.gui.qt.dds_util import Attrs2QtValue
 from jgb.gui.qt.qt_model import QSignalEmitter
+from jgb.gui.qt.qt_slots import QPushButtonClicked
 
 from zemrpc.zem.context import ctx
 from zemrpc.gui import ui_utils
@@ -40,63 +41,6 @@ class RecursivelyHandler:
                 self()
 
 
-class AsyncTaskExecutor:
-    def __init__(self):
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        self.active_tasks = {}  # 存储活跃任务
-
-    def execute_async(self, button: QPushButton, task_func, callback=None, loading_text="..."):
-        # 防止重复点击
-        task_id = id(button)
-        if task_id in self.active_tasks and not self.active_tasks[task_id].done():
-            return
-
-        # 保存按钮原始状态
-        original_text = button.text()
-        button.setEnabled(False)
-        button.setText(loading_text)
-
-        # 提交任务
-        future = self.executor.submit(self._safe_execute, task_func)
-        self.active_tasks[task_id] = future
-
-        # 创建定时器检查完成状态
-        timer = QTimer()
-        timer.timeout.connect(lambda: self._check_task_done(task_id, timer, button, original_text, callback))
-        timer.start(100)
-
-    def _safe_execute(self, task_func):
-        try:
-            result = task_func()
-            return True, result
-        except Exception as e:
-            logger.warning(f"任务执行失败: {e}")
-            return False, str(e)
-
-    def _check_task_done(self, task_id, timer, button, original_text, callback):
-        future = self.active_tasks.get(task_id)
-        if future and future.done():
-            timer.stop()
-
-            try:
-                success, result = future.result()
-                if callback:
-                    callback(success, result)
-            except Exception as e:
-                logger.warning(f"获取任务结果失败: {e}")
-
-            finally:
-                # 恢复按钮状态
-                button.setEnabled(True)
-                button.setText(original_text)
-                # 清理任务记录
-                if task_id in self.active_tasks:
-                    del self.active_tasks[task_id]
-
-    def shutdown(self):
-        self.executor.shutdown(wait=False)
-
-
 class ZemRpcWidget(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
@@ -108,13 +52,11 @@ class ZemRpcWidget(QWidget):
         self.zem_img_viewer = ZemImgViewer(self.ui.tab_sem_img)
         self.nav_img_viewer = NavImgViewer(self.ui.tab_nav_img)
 
-        # 创建异步任务执行器
-        self.async_executor = AsyncTaskExecutor()
-
         self.init_ui()
         self.init_ss()
 
     def init_ss(self):
+        # 连接
         self.ui.btn_send.clicked.connect(self._slot_btn_send)
         self.ui.btn_handshake.clicked.connect(self._slot_btn_handshake)
         self.ui.btn_snap.clicked.connect(self._slot_btn_snap)
@@ -217,17 +159,17 @@ class ZemRpcWidget(QWidget):
         def handshake_task():
             return zem_api.handshake()
 
-        def on_handshake_complete(success, result):
+        def on_complete(success, result):
             if success:
                 self.update_cbox_sem_servers(result)
 
-        self.async_executor.execute_async(button=self.ui.btn_handshake, task_func=handshake_task, callback=on_handshake_complete, loading_text="握手中...")
+        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_handshake, handshake_task, on_complete))
 
     def _slot_btn_snap(self):
         def snap_task():
             zem_api.snap()
 
-        self.async_executor.execute_async(button=self.ui.btn_snap, task_func=snap_task, loading_text="采集中...")
+        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_snap, snap_task))
 
     def _slot_input_mag_confirmed(self):
         zem_api.set_mag(ui_utils.parse_mag_str(self.ui.input_mag.text()))
@@ -286,20 +228,20 @@ class ZemRpcWidget(QWidget):
         def ob_task():
             zem_api.get_ob()
 
-        self.async_executor.execute_async(button=self.ui.btn_ob, task_func=ob_task)
+        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_ob, ob_task))
 
     def _slot_btn_af(self):
         def af_task():
             zem_api.run_autofocus()
 
-        self.async_executor.execute_async(button=self.ui.btn_af, task_func=af_task)
+        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_af, af_task))
 
     def _slot_btn_zem_sync(self):
         def sync_task():
             zem_api.sync()
             return True, None
 
-        self.async_executor.execute_async(button=self.ui.btn_zem_sync, task_func=sync_task)
+        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_zem_sync, sync_task))
 
     def _slot_btn_hv_set(self):
         if not qt_util.show_confirmed_box(self):
@@ -309,26 +251,50 @@ class ZemRpcWidget(QWidget):
             zem_api.set_hv(self.ui.ipt_hv.value())
             return True, None
 
-        self.async_executor.execute_async(button=self.ui.btn_hv_set, task_func=hv_set_task)
+        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_hv_set, hv_set_task))
 
     def _slot_btn_gun_on(self):
         if not qt_util.show_confirmed_box(self):
             return
 
+        def gun_task():
+            zem_api.set_gun(True, wait=True)
+            return True, None
+
+        def on_complete(success, result):
+            if success:
+                qt_util.show_message_box_info(self, "枪开成功")
+            else:
+                qt_util.show_message_box_warning(self, f"枪开失败: {result}")
+
+        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_gun_on, gun_task, on_complete))
+
     def _slot_btn_gun_off(self):
         if not qt_util.show_confirmed_box(self):
             return
+
+        def gun_off_task():
+            zem_api.set_gun(False, wait=True)
+            return True, None
+
+        def on_complete(success, result):
+            if success:
+                qt_util.show_message_box_info(self, "枪关成功")
+            else:
+                qt_util.show_message_box_warning(self, f"枪关失败: {result}")
+
+        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_gun_off, gun_off_task, on_complete))
 
     def _slot_btn_stage_xy_pos(self):
         def stage_xy_pos_task():
             zem_api.get_stage_pos()
             zem_api.sync_scan_field()
 
-        def on_stage_xy_pos_complete(success, result):
+        def on_complete(success, result):
             if success:
                 self.update_stage_pos(result)
 
-        self.async_executor.execute_async(button=self.ui.btn_stage_xy_pos, task_func=stage_xy_pos_task, callback=on_stage_xy_pos_complete, loading_text="获取位置...")
+        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_stage_xy_pos, stage_xy_pos_task, on_complete))
 
     def _slot_btn_stage_xy_goto(self):
         def stage_xy_goto_task():
@@ -336,7 +302,7 @@ class ZemRpcWidget(QWidget):
             zem_api.stage_xy_goto((x, y))
             return True, None
 
-        self.async_executor.execute_async(button=self.ui.btn_stage_xy_goto, task_func=stage_xy_goto_task)
+        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_stage_xy_goto, stage_xy_goto_task))
 
     def _slot_btn_stage_xy_move(self, direction: StageMoveDirection):
         rval = float(self.ui.input_stage_xy_rval.text())
@@ -347,7 +313,7 @@ class ZemRpcWidget(QWidget):
             zem_api.get_nav_img()
             return True, None
 
-        self.async_executor.execute_async(button=self.ui.btn_stage_xy_goto, task_func=get_nav_info)
+        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_get_nav_info, get_nav_info))
 
     def _slot_btn_remap(self): ...
 
@@ -376,5 +342,4 @@ class ZemRpcWidget(QWidget):
             self.ui.input_mag.setText(str(int(mag)))
 
     def closeEvent(self, event):
-        self.async_executor.shutdown()
         super().closeEvent(event)

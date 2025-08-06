@@ -4,10 +4,10 @@
 
 from pydantic import Field
 
-from jgb.util import cv_util
+from jgb.util import cv_util, idx_util
 from jgb.util.pydantic_util import DefaultModel
 
-from zemrpc.zem.models import Bounds, IdxGen
+from zemrpc.zem.models import Bounds
 
 
 class Req(DefaultModel):
@@ -91,7 +91,7 @@ class RespProtocolNg(DefaultModel):
 
 class JsonRpcBuilder:
     def __init__(self):
-        self.idx = IdxGen()
+        self.idx = idx_util.IdxGen()
 
     def _get_dict(self, req: Req):
         req.idx = self.idx.vpp
