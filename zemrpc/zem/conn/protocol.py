@@ -156,6 +156,7 @@ class EnumCmd(Enum):
     SetHV             = "SetHV",                        True,  20_000,   "设置加速电压"
     SetHvON           = "SetHvON",                      False, 3_000,    "启动高压"
     SetHvOFF          = "SetHvOFF",                     False, 1_000,    "关闭高压"
+    GetHvStatus       = "GetHvStatus",                  False, 300,      "获取高压状态"
     GetStagePos       = "GetStagePos",                  False, 100,      "获取视场坐标"
     SetStagePos       = "SetStagePos",                  True,  100,      "设置视场坐标"
     GetNavImg         = "GetNavImg",                    False, 30_000,   "获取导航图片"
@@ -215,6 +216,12 @@ class EnumStageStatus(Enum):
     Idle = 1  # 1: 脱机, 已到达指定位置
     Running = 0  # 0: 激活，运行中
     Unknown = 999
+
+
+class EnumHvStatus(Enum):
+    Close = 0  # 0: 高压关闭
+    Open = 1  # 1: 高压开启
+    Changing = 2  # 2: 高压正在开启或关闭
 
 
 class EnumAutofocusStatus(Enum):
@@ -278,6 +285,9 @@ class ProtocolBuilder:
 
     def build_get_stage_status(self):
         return self.build_get(EnumCmd.GetStgStatus)
+
+    def build_get_hv_status(self):
+        return self.build_get(EnumCmd.GetHvStatus)
 
     def build_set_hv(self, value: int):
         # value in Voltage
@@ -594,6 +604,9 @@ class RespPacket(BaseResponse):
     def parse_hv(self):
         v, i = self._parse_2()
         return HvInfo(acc_v=float(v), beam_i=float(i))
+
+    def parse_hv_status(self) -> EnumHvStatus:
+        return EnumHvStatus(int(self._parse_1()))
 
     def parse_wd(self) -> float:
         return float(self._parse_1())

@@ -183,15 +183,16 @@ class ZemApi(AppTreeNodeRequiredMixin):
         self.device.get_scan_info()
         self.m.field_with_loc(self.device.m.scan_info, self.device.m.stage_pos)
 
-    def set_hv(self, kv: float):
+    def set_hv(self, kv: float, wait: bool = False):
         if not self._init_sync:
             raise ZemException.zem_api_not_ready("Zem API 未初始化，请先同步状态")
 
         kv = math_util.clamp(int(kv), 1, 30)
         self.device.set_hv(kv)
-        # TODO wait
+        if wait:
+            self.device.ensure_hv_ready()
 
-    def set_gun(self, state: bool):
+    def set_gun(self, state: bool, wait: bool = False):
         if not self._init_sync:
             raise ZemException.zem_api_not_ready("Zem API 未初始化，请先同步状态")
 
@@ -199,6 +200,9 @@ class ZemApi(AppTreeNodeRequiredMixin):
             self.device.gun_on()
         else:
             self.device.gun_off()
+
+        if wait:
+            self.device.ensure_hv_ready()
 
         # TODO wait
         # self.device.get_hv()

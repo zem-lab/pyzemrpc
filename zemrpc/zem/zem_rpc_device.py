@@ -37,7 +37,7 @@ from zemrpc import app_cfg
 from zemrpc.zem.context import ctx
 from zemrpc.zem.conn.img_receiver import ImgReceiver
 from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, NavParam, ScanInfo, SnapArgs, StagePos, ZemException
-from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumStageStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
+from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumHvStatus, EnumStageStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
 from zemrpc.zem.conn.rpc_protocol import JsonRpcBuilder, RespProtocolNg, RpcSnapResp
 from zemrpc.zem import zem_util as zu
 
@@ -525,6 +525,34 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
             status = self.get_stage_status()
             if timeout < time.time() - st:
                 raise ZemException("等待样品台脱机超时", ZemException.Code.SvrError)
+
+    def get_hv_status(self):
+        """
+        Get current high voltage status.
+
+        Returns:
+            EnumHvStatus: Current high voltage status (open, close, changing)
+        """
+        resp = self.send(self.builder.build_get_hv_status())
+        return resp.parse_hv_status()
+
+    def ensure_hv_ready(self, timeout=60):
+        """
+        Wait for high voltage to stabilize after setting.
+
+        Args:
+            timeout (int): Maximum wait time in seconds
+
+        Raises:
+            ZemException: If timeout is reached before HV is ready
+        """
+        st = time.time()
+        status = self.get_hv_status()
+        while status == EnumHvStatus.Changing:
+            time.sleep(1)
+            status = self.get_hv_status()
+            if timeout < time.time() - st:
+                raise ZemException("等待高压稳定超时", ZemException.Code.SvrError)
 
     def get_mag(self):
         """
