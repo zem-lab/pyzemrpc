@@ -564,10 +564,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
             HvInfo: Updated high voltage information if successful, None if failed
         """
         resp = self.send(self.builder.build_set_hv(kv))
-        if resp.is_ack_ok():
-            self.m.hv_info.kv = kv
-            return self.m.hv_info
-        return None
+        return resp.is_ack_ok()
 
     def gun_on(self):
         """
