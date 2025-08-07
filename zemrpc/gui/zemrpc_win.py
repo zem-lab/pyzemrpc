@@ -218,7 +218,6 @@ class ZemRpcWidget(QWidget):
     def _on_slider_ob_value_changed(self, value: float):
         def handler(ob):
             with ctx.signal_blocker(zem_api.device.m, "ob"):
-                print(ob)
                 zem_api.set_ob(int(ob))
 
         rh = RecursivelyHandler(self.ui.slider_ob, handler)
@@ -263,9 +262,9 @@ class ZemRpcWidget(QWidget):
 
         def on_complete(success, result):
             if success:
-                qt_util.show_message_box_info(self, "枪开成功")
+                logger.debug("枪开成功")
             else:
-                qt_util.show_message_box_warning(self, f"枪开失败: {result}")
+                logger.warning(f"枪开失败: {result}")
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_gun_on, gun_task, on_complete))
 
@@ -279,9 +278,9 @@ class ZemRpcWidget(QWidget):
 
         def on_complete(success, result):
             if success:
-                qt_util.show_message_box_info(self, "枪关成功")
+                logger.debug("关枪成功")
             else:
-                qt_util.show_message_box_warning(self, f"枪关失败: {result}")
+                logger.warning(f"关枪失败: {result}")
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_gun_off, gun_off_task, on_complete))
 

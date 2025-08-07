@@ -546,6 +546,8 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         Raises:
             ZemException: If timeout is reached before HV is ready
         """
+        time.sleep(5)
+
         st = time.time()
         status = self.get_hv_status()
         while status == EnumHvStatus.Changing:
