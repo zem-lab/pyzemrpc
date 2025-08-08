@@ -178,8 +178,7 @@ class ZemRpcWidget(QWidget):
         zem_api.set_field_rotation(int(self.ui.input_field_rotation.text()))
 
     def _slot_btn_play(self):
-        status = zem_api.check_video_play()
-        if status == EnumVideoStatus.Running:
+        if zem_api.is_video_playing():
             zem_api.video_play_off()
             self.ui.btn_play.setText("播放")
         else:

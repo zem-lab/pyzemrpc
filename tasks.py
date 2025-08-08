@@ -6,7 +6,6 @@ import sys
 import os
 import contextlib
 import shutil
-from typing import List
 from pathlib import Path
 from invoke import task
 
