@@ -94,8 +94,9 @@ class ZemApi(AppTreeNodeRequiredMixin):
 
         self.get_hv = self.device.get_hv
         self.get_stage_pos = self.device.get_stage_pos
-        self.video_play_on = self.device.video_play_on
         self.check_video_play = self.device.check_video_play
+        self.is_video_playing = self.device.is_video_playing
+        self.video_play_on = self.device.video_play_on
         self.get_ob = self.device.get_ob
         self.set_field_rotation = self.device.set_field_rotation
 
@@ -234,6 +235,9 @@ class ZemApi(AppTreeNodeRequiredMixin):
         app_cfg.cfg_db.kv_db.set_obj("nav_param_calibed", self.m.nav_param_calibed)
 
     def video_play_off(self):
+        if not self.device.is_video_playing():
+            return
+
         from zemrpc.zem.models import EnumImageSize
 
         snap_args = SnapArgs(pixel_avg=5, size=EnumImageSize.S512x512)

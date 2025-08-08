@@ -37,7 +37,7 @@ from zemrpc import app_cfg
 from zemrpc.zem.context import ctx
 from zemrpc.zem.conn.img_receiver import ImgReceiver
 from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, NavParam, ScanInfo, SnapArgs, StagePos, ZemException
-from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumHvStatus, EnumStageStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
+from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumHvStatus, EnumStageStatus, EnumVideoStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
 from zemrpc.zem.conn.rpc_protocol import JsonRpcBuilder, RespProtocolNg, RpcSnapResp
 from zemrpc.zem import zem_util as zu
 
@@ -339,6 +339,9 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         resp = self.pubsub_send(self.builder.build_is_video_alive())
         status = resp.parse_video_status()
         return status
+
+    def is_video_playing(self):
+        return self.check_video_play() == EnumVideoStatus.Running
 
     def snap_simple(self, snap_args: SnapArgs):
         """
