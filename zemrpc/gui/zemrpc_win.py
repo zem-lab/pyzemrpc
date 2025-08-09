@@ -95,6 +95,9 @@ class ZemRpcWidget(QWidget):
         # 导航图
         self.ui.btn_get_nav_info.clicked.connect(self._slot_btn_get_nav_info)
 
+        ## 虚拟zem
+        self.ui.btn_vzem_start.clicked.connect(self._slot_btn_vzem_start)
+
         ctx.sub_computed_attr(zem_api.device.m.cmd_rcv, Attrs2QtValue(self, self.ui.lbl_cmd_rcv.setText, emitter=self.emitter))
         ctx.sub_computed_attr(zem_api.device.m.cmd_send, Attrs2QtValue(self, self.ui.lbl_cmd_send.setText, emitter=self.emitter))
         ctx.sub_attr(zem_api.m, "zem_img", Attrs2QtValue(self, self.zem_img_viewer.update_sem_image, emitter=self.emitter))
@@ -113,6 +116,7 @@ class ZemRpcWidget(QWidget):
         self._init_cbox_cmds()
         self._init_cbox_snap_args()
         self._init_cbox_mag()
+        self._init_cbox_vzem()
 
         self.ui.slider_ob.setRange(0, 65535)
         self.ui.slider_ob.setMidValueLabel("32768")
@@ -144,6 +148,12 @@ class ZemRpcWidget(QWidget):
                 cbox.addItem(mag)
         cbox.setCurrentText("500x")
         cbox.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+
+    def _init_cbox_vzem(self):
+        cbox = self.ui.cbox_vzem_type
+        with QSignalBlocker(cbox):
+            for t in ["Mandelbrot", "Replay"]:
+                cbox.addItem(t)
 
     def update_cbox_sem_servers(self, servers):
         records = {self.ui.cbox_sem_servers.itemText(i) for i in range(self.ui.cbox_sem_servers.count())}
@@ -261,9 +271,9 @@ class ZemRpcWidget(QWidget):
 
         def on_complete(success, result):
             if success:
-                logger.debug("枪开成功")
+                ctx.trigger.transmit(qt_util.show_message_box_info, self, "开枪成功")
             else:
-                logger.warning(f"枪开失败: {result}")
+                ctx.trigger.transmit(qt_util.show_message_box_info, self, f"开枪失败: {result}")
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_gun_on, gun_task, on_complete))
 
@@ -277,9 +287,9 @@ class ZemRpcWidget(QWidget):
 
         def on_complete(success, result):
             if success:
-                logger.debug("关枪成功")
+                ctx.trigger.transmit(qt_util.show_message_box_info, self, "关枪成功")
             else:
-                logger.warning(f"关枪失败: {result}")
+                ctx.trigger.transmit(qt_util.show_message_box_info, self, f"关枪失败: {result}")
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_gun_off, gun_off_task, on_complete))
 
@@ -313,6 +323,20 @@ class ZemRpcWidget(QWidget):
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_get_nav_info, get_nav_info))
 
+    def _slot_btn_vzem_start(self):
+        def vzem_start_task():
+            vzem_type = qt_util.get_cbox_metadata(self.ui.cbox_vzem_type)
+            zem_api.start_vzem(vzem_type)
+            return True, None
+
+        def on_complete(success, result):
+            if success:
+                ctx.trigger.transmit(qt_util.show_message_box_info, self, "虚拟ZEM启动成功")
+            else:
+                ctx.trigger.transmit(qt_util.show_message_box_info, self, f"虚拟ZEM启动失败: {result}")
+
+        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_vzem_start, vzem_start_task, on_complete))
+
     def _slot_btn_remap(self): ...
 
     def update_scan_info(self, si):
@@ -341,3 +365,5 @@ class ZemRpcWidget(QWidget):
 
     def closeEvent(self, event):
         super().closeEvent(event)
+        zem_api.vzem_mgr.stop_vzem()
+        ctx.close()

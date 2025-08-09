@@ -1,3 +1,12 @@
 pyzemrpc:
   version: 1.0.0
   output_dir: ./data/appout
+
+  virtual_zem:
+    img_dtype: np.uint16
+    simu_timeout: 0             # 随机数小于该值模拟超时
+    simu_busy: 0                # 随机数小于该值模拟设备忙
+    replay_zem:
+      enable: False
+      # cap_roi_task: D:/tmp/2025/x20250613_diatom/replay_zem-tasks/cap_roi-20250714_120555
+      cap_roi_task: E:/days/2025/x20250613_diatom/replay_zem-tasks/cap_roi-20250715_093056

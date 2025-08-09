@@ -3,6 +3,7 @@
 # tr!bf tribf@tribf.com
 
 from jgb.util.dds_util import BaseAppContext
+from jgb.gui.qt.qt_model import QTrigger
 
 from zemrpc import app_cfg
 
@@ -14,6 +15,7 @@ class ZemApiContext(BaseAppContext):
 
     def __init__(self):
         super().__init__(max_workers=2)
+        self.trigger = QTrigger(True)
 
     @property
     def logdir(self):

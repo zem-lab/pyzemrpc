@@ -14,6 +14,7 @@ from jgb.util import json_util, math_util
 from jgb.util.dds_util import AppTreeNode, AppTreeNodeRequiredMixin
 
 from zemrpc import app_cfg
+from zemrpc.tools.virtual_zem.virtual_zem_mgr import VZemMgr
 from zemrpc.zem.context import ctx
 from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, NavImage, NavParam, ScanInfo, SnapArgs, StageMoveDirection, StagePos, ZemException, ZemImage, ZemState
 from zemrpc.zem.conn.protocol import EnumCmd
@@ -81,6 +82,7 @@ class ZemApi(AppTreeNodeRequiredMixin):
         self.n = ctx.add_node(self)
 
         self.device = ZemRpcDevice(name="instrument", parent=self.n)
+        self.vzem_mgr = VZemMgr()
 
         self.machine = ZemApiMachine()
         self.img_processor_mgr = ZemImageProcessorManager()
@@ -332,6 +334,9 @@ class ZemApi(AppTreeNodeRequiredMixin):
 
         if not self.is_api_state_idel():
             raise ZemException.zem_api_not_ready("Zem API 忙")
+
+    def start_vzem(self, vzem_type: str):
+        self.vzem_mgr.start_vzem()
 
 
 zem_api = ZemApi()

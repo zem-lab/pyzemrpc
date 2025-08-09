@@ -93,6 +93,7 @@ setup_args = dict(
     entry_points={
         "console_scripts": [
             "pyzemrpc_info=zemrpc.tools.zemrpc_info:main",
+            "pyzemrpc_virtual_zem=zemrpc.tools.virtual_zem.main:main",
             *entry_points,
         ],
         "gui_scripts": [
