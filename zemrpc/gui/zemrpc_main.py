@@ -24,6 +24,10 @@ class MainWindow(QMainWindow):
         self.w = ZemRpcWidget(self)
         self.setCentralWidget(self.w)
 
+    def closeEvent(self, event):
+        self.w.close()
+        super().closeEvent(event)
+
 
 if __name__ == "__main__":
     os.environ["QT_API"] = "pyside6"

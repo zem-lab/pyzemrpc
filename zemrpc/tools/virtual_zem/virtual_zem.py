@@ -45,7 +45,7 @@ class ZemRespBuilder:
         return self.build_set(EnumCmd.GetMag, f"{mag}")
 
     def build_get_beam_size(self, bs: EnumBeamSize):
-        return self.build_set(EnumCmd.GetBeamSz, f"{bs.value[0]}")
+        return self.build_set(EnumCmd.GetBeamSz, f"{bs.bs}")
 
     def build_get_nav_img(self, addr, depth):
         svr_name = "Virtual Zem Service"

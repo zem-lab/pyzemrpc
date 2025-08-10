@@ -182,7 +182,8 @@ class ZemRpcWidget(QWidget):
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_snap, snap_task))
 
     def _slot_input_mag_confirmed(self):
-        zem_api.set_mag(ui_utils.parse_mag_str(self.ui.input_mag.text()))
+        mag = int(self.ui.input_mag.text())
+        zem_api.set_mag(mag)
 
     def _slot_input_field_rotation_confirmed(self):
         zem_api.set_field_rotation(int(self.ui.input_field_rotation.text()))
