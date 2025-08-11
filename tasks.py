@@ -8,10 +8,12 @@ import contextlib
 import shutil
 from pathlib import Path
 from invoke import task
+from invoke.context import Context
 
 from jgb.util import file_util
 
 PROJ_HOME = Path(__file__).resolve().absolute().parent
+PROJ_NAME = "zemrpc"
 
 
 @contextlib.contextmanager
@@ -26,11 +28,22 @@ def chdir(dirname=None):
 
 
 @task
+def ui2py(c: Context):
+    ui_files = []  # type: list[Path]
+    for ui in (PROJ_HOME / PROJ_NAME).rglob("*.ui"):
+        ui_files.append(ui.relative_to(PROJ_HOME))
+
+    for ui_file in ui_files:
+        py_file = ui_file.parent / f"{ui_file.stem}_ui.py"
+        c.run(f"pyside6-uic.exe {ui_file} -o {py_file}")
+
+
+@task
 def git_info(c):
     r = c.run('git log --pretty=format:"%H" -n 1', hide=True)
     hash = r.stdout
     line = f'GIT_INFO = "{hash}"\n'
-    with open("zemrpc/__commit__.py", "w") as f:
+    with open(f"{PROJ_NAME}/__commit__.py", "w") as f:
         f.write(line)
 
 
