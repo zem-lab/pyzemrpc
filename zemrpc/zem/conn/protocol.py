@@ -501,6 +501,12 @@ class ReqPacket:
     def parse_mag(self) -> int:
         return int(self._parse_1())
 
+    def parse_ob(self) -> int:
+        return int(self._parse_1())
+
+    def parse_hv(self) -> int:
+        return int(self._parse_1())
+
     def parse_rotation(self) -> int:
         return int(self._parse_1())
 

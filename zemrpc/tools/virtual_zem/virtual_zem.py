@@ -482,6 +482,8 @@ class RemoteZem(threading.Thread):
             self._send(packet.addr, self.builder.build_get_scan_info(self.zem_dev.scan_info))
         elif cmd == EnumCmd.GetHV:
             self._send(packet.addr, self.builder.build_get_hv_info(self.zem_dev.hv_info))
+        elif cmd == EnumCmd.SetHV:
+            self._send(packet.addr, self.resp_set_hv(packet))
         elif cmd == EnumCmd.GetModel:
             self._send(packet.addr, self.builder.build_get_model(self.zem_dev.model))
         elif cmd == EnumCmd.IsVideoAlive:
@@ -501,6 +503,10 @@ class RemoteZem(threading.Thread):
     def resp_set_ob(self, packet: ReqPacket):
         self.zem_dev.ob = packet.parse_ob()
         return self.builder.build_ack(EnumCmd.SetOB)
+
+    def resp_set_hv(self, packet: ReqPacket):
+        self.zem_dev.acc_v = packet.parse_hv() * 1000
+        return self.builder.build_ack(EnumCmd.SetHV)
 
     def resq_set_rotation(self, packet: ReqPacket):
         rot_degree = packet.parse_rotation()
