@@ -59,6 +59,7 @@ class VZemMgr:
         try:
             logger.info(f"启动 virtual ZEM: {' '.join(cmd)}")
             # 准备日志文件
+            file_util.ensure_dir(app_cfg.log_dir)
             self._vzem_log_path = app_cfg.log_dir / "virtual_zem.stdout.log"
             self._vzem_log_fp = self._vzem_log_path.open("a", encoding="utf-8")
             self._vzem_log_fp.write(f"\n==== virtual ZEM start {time.strftime('%Y-%m-%d %H:%M:%S')} cmd={' '.join(cmd)} ====\n")
