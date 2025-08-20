@@ -873,7 +873,9 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         Args:
             req (Request): Request to be sent
         """
-        self.m.cmd_send(req.data.decode())
+        _c = req.data.decode()
+        logger.debug(f"send to {self.m.addr}: {_c}")
+        self.m.cmd_send(_c)
         if req.cmd == EnumCmd.Handshake:
             # Broadcast handshake requests for device discovery
             self.socket.broadcast(req.data, self.m.addr[1])

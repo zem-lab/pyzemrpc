@@ -54,7 +54,7 @@ def clean_build(c):
         shutil.rmtree(d, True)
 
 
-@task(pre=[git_info, clean_build])
+@task(pre=[git_info, ui2py, clean_build])
 def build(c, docs=False):
     r = c.run(f"{sys.executable} setup.py bdist_wheel")
     file_util.write_text_lines(PROJ_HOME / "build/build.log", [r.stdout])

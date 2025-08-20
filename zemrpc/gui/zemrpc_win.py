@@ -4,13 +4,12 @@
 
 from typing import cast
 from loguru import logger
-import concurrent.futures
-from qtpy.QtCore import Qt, QSignalBlocker, QTimer
-from qtpy.QtWidgets import QWidget, QListView, QComboBox, QPushButton
+from qtpy.QtCore import Qt, QSignalBlocker
+from qtpy.QtWidgets import QWidget, QListView, QComboBox
 
 from jgb.gui.qt import qt_util
 from jgb.gui.qt.dds_util import Attrs2QtValue
-from jgb.gui.qt.qt_model import QSignalEmitter
+from jgb.gui.qt.qt_model import QEmitter
 from jgb.gui.qt.qt_slots import QPushButtonClicked
 
 from zemrpc.zem.context import ctx
@@ -48,7 +47,7 @@ class ZemRpcWidget(QWidget):
         self.ui = Ui_Form()
         self.ui.setupUi(self)
 
-        self.emitter = QSignalEmitter(True)
+        self.emitter = QEmitter(True)
         self.zem_img_viewer = ZemImgViewer(self.ui.tab_sem_img)
         self.nav_img_viewer = NavImgViewer(self.ui.tab_nav_img)
 
