@@ -38,7 +38,7 @@ from zemrpc.zem.context import ctx
 from zemrpc.zem.conn.img_receiver import ImgReceiver
 from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, NavParam, ScanInfo, SnapArgs, StagePos, ZemException
 from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumHvStatus, EnumStageStatus, EnumVideoStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
-from zemrpc.zem.conn.rpc_protocol import JsonRpcBuilder, RespProtocolNg, RpcSnapResp
+from zemrpc.zem.conn.rpc_protocol import JsonRpcBuilder, RespProtocolNg, RpcSnapResp, RpcStatusResp
 from zemrpc.zem import zem_util as zu
 
 
@@ -371,6 +371,16 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         """
         data = self.zem_rpc(self.rpc_builder.snap(width, height, pixel_avg, frame_avg))
         return RpcSnapResp(**data)
+
+    def status_rpc(self):
+        """
+        Check device status using RPC protocol.
+
+        Returns:
+            dict: Status information from the device
+        """
+        data = self.zem_rpc(self.rpc_builder.status())
+        return RpcStatusResp(**data)
 
     def get_nav_param(self) -> NavParam:
         """

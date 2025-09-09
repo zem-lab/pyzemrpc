@@ -58,6 +58,13 @@ class RpcSnapResp(RpcResp):
         return Bounds(xmin, ymin, xmax, ymax)
 
 
+class Status(Req):
+    method: str = "Status"
+
+
+class RpcStatusResp(RpcResp): ...
+
+
 class SnapParams(DefaultModel):
     width: int = Field(default=2048)
     height: int = Field(default=2048)
@@ -101,6 +108,9 @@ class JsonRpcBuilder:
         req = Snap()
         req.params.append(SnapParams(width=width, height=height, pixel_avg=pixel_avg, frame_avg=frame_avg))
         return self._get_dict(req)
+
+    def status(self):
+        return self._get_dict(Status())
 
     def get_protocol_ng(self):
         return self._get_dict(GetProtocolNg())
