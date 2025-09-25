@@ -16,7 +16,7 @@ from jgb.util import math_util, json_util
 from jgb.util.enum_util import EnumWithCode
 from jgb.conn.pubsub import BaseRequest, BaseResponse
 
-from zemrpc.zem.models import NavParam, StagePos, ScanInfo, HvInfo, EnumImageSize, EnumBeamSize
+from zemrpc.zem.models import NavParam, StagePos, ScanInfo, HvInfo, EnumImageSize, EnumBeamSize, BseInfo, BseQuadrant, EnumBsePhase
 
 
 # fmt: off
@@ -186,6 +186,8 @@ class EnumCmd(Enum):
     GetStageTStatus   = "GetStageTStatus",              False, 100,      "获取T坐标"
     SetAutoSnapTask   = "SetAutoSnapTask",              True,  100,      "设置自动拍图任务"
     GetModel          = "GetModel",                     False, 100,      "获取型号"
+    GetBseCfg         = "GetBseCfg",                    False, 1000,     "获取BSE探测器设置"
+    SetBseCfg         = "SetBseCfg",                    True,  1000,     "设置BSE探测器设置"
     ZemRpc            = "ZemRpc",                       True,  100,      "ZemRpc"
 
     @property
@@ -292,6 +294,13 @@ class ProtocolBuilder:
     def build_set_hv(self, value: int):
         # value in Voltage
         return self.build_set(EnumCmd.SetHV, f"{value}")
+
+    def build_get_bse_cfg(self):
+        return self.build_get(EnumCmd.GetBseCfg)
+
+    def build_set_bse_cfg(self, cfg: BseInfo):
+        v = [f"{q.phase.value},{q.bias}" for q in cfg.quadrants]
+        return self.build_set(EnumCmd.SetBseCfg, ",".join(v))
 
     def build_gun_on(self):
         return self.build_get(EnumCmd.SetHvON)
@@ -507,6 +516,15 @@ class ReqPacket:
     def parse_hv(self) -> int:
         return int(self._parse_1())
 
+    def parse_bse_cfg(self) -> BseInfo:
+        data = list(map(int, self._parse_1().split(",")))
+        quadrants = [BseQuadrant() for _ in range(4)]
+        for i in range(4):
+            quadrants[i].phase = EnumBsePhase(data[i * 2])
+            quadrants[i].bias = data[i * 2 + 1]
+        q1, q2, q3, q4 = quadrants
+        return BseInfo(q1=q1, q2=q2, q3=q3, q4=q4)
+
     def parse_rotation(self) -> int:
         return int(self._parse_1())
 
@@ -592,6 +610,8 @@ class RespPacket(BaseResponse):
     def parse_ip_port(self) -> Tuple[str, int]:
         ipport = self.data_str.split(",")[-2]
         ip, port = ipport.split(":")
+        if "addr" in self.extra:
+            ip = self.extra["addr"][0]
         return ip, int(port)
 
     def parse_stage_pos(self) -> StagePos:
@@ -613,6 +633,15 @@ class RespPacket(BaseResponse):
 
     def parse_hv_status(self) -> EnumHvStatus:
         return EnumHvStatus(int(self._parse_1()))
+
+    def parse_bse_cfg(self) -> BseInfo:
+        data = list(map(int, self._parse_1().split(",")))
+        quadrants = [BseQuadrant() for _ in range(4)]
+        for i in range(4):
+            quadrants[i].phase = EnumBsePhase(data[i * 2])
+            quadrants[i].bias = data[i * 2 + 1]
+        q1, q2, q3, q4 = quadrants
+        return BseInfo(q1=q1, q2=q2, q3=q3, q4=q4)
 
     def parse_wd(self) -> float:
         return float(self._parse_1())

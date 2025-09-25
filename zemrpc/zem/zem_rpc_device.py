@@ -36,7 +36,7 @@ from jgb.conn.udp_socket import UdpSocket, UdpPacket
 from zemrpc import app_cfg
 from zemrpc.zem.context import ctx
 from zemrpc.zem.conn.img_receiver import ImgReceiver
-from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, NavParam, ScanInfo, SnapArgs, StagePos, ZemException
+from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, NavParam, ScanInfo, SnapArgs, StagePos, ZemException, BseInfo
 from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumHvStatus, EnumStageStatus, EnumVideoStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
 from zemrpc.zem.conn.rpc_protocol import JsonRpcBuilder, RespProtocolNg, RpcSnapResp, RpcStatusResp
 from zemrpc.zem import zem_util as zu
@@ -177,6 +177,7 @@ class ZemModel(AppTreeNode):
     addr: Tuple[str, int] = Field(default=("UNK", 61557))
 
     ed_chanel: str = Field(default="BSE", init=False)
+    bse_cfg: BseInfo = Field(default=None, on_setattr=True)
 
     mag: float = Field(default=0, on_setattr=True)
     beam_size: EnumBeamSize = Field(default=EnumBeamSize.Unk, on_setattr=True)
@@ -609,6 +610,30 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         resp = self.send(self.builder.build_set_hv(kv))
         return resp.is_ack_ok()
 
+    def get_bse_cfg(self) -> BseInfo:
+        """
+        Get current backscattered electron (BSE) detector configuration.
+        Returns:
+            BseInfo: Current BSE detector configuration
+        """
+        resp = self.send(self.builder.build_get_bse_cfg())
+        self.m.bse_cfg = resp.parse_bse_cfg()
+        return self.m.bse_cfg
+
+    def set_bse_cfg(self, cfg: BseInfo):
+        """
+        Set backscattered electron (BSE) detector configuration.
+        Args:
+            cfg (BseInfo): Target BSE detector configuration
+        Returns:
+            BseInfo: New BSE configuration if successful, None if failed
+        """
+        resp = self.send(self.builder.build_set_bse_cfg(cfg))
+        if resp.is_ack_ok():
+            self.m.bse_cfg = cfg
+            return cfg
+        return None
+
     def gun_on(self):
         """
         Turn on the electron gun.
@@ -872,6 +897,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         ret = []
         for packet in self.parser.append(pkt.addr, pkt.data):
             resp = RespPacket(packet)
+            resp.extra["addr"] = pkt.addr
             self.m.cmd_rcv(resp.data_str)
             ret.append(resp)
         return ret

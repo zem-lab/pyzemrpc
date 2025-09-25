@@ -55,6 +55,29 @@ class ScanInfo(DefaultModel):
     rot_degree: float
 
 
+class EnumBsePhase(Enum):
+    OFF = 0  # 关闭
+    ANTI = 1  # 反相
+    IN = 2  # 同相
+    INOUT = 3  # 同反相
+
+
+class BseQuadrant(DefaultModel):
+    bias: int = Field(default=0x7FF)
+    phase: EnumBsePhase = Field(default=EnumBsePhase.ANTI)
+
+
+class BseInfo(DefaultModel):
+    q1: BseQuadrant = Field(default_factory=BseQuadrant)
+    q2: BseQuadrant = Field(default_factory=BseQuadrant)
+    q3: BseQuadrant = Field(default_factory=BseQuadrant)
+    q4: BseQuadrant = Field(default_factory=BseQuadrant)
+
+    @property
+    def quadrants(self):
+        return [self.q1, self.q2, self.q3, self.q4]
+
+
 class FieldWithLoc(DefaultModel):
     scan_info: ScanInfo
     pos: StagePos

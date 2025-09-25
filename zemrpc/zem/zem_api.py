@@ -100,6 +100,8 @@ class ZemApi(AppTreeNodeRequiredMixin):
         self.is_video_playing = self.device.is_video_playing
         self.video_play_on = self.device.video_play_on
         self.get_ob = self.device.get_ob
+        self.get_bse_cfg = self.device.get_bse_cfg
+        self.set_bse_cfg = self.device.set_bse_cfg
         self.set_field_rotation = self.device.set_field_rotation
 
         self.update_img_processor(normalize_with_drop)

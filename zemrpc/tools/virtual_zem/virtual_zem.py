@@ -19,7 +19,23 @@ from functools import cached_property
 from jgb.util import os_util, cv_util, file_util, json_util
 
 from zemrpc import app_cfg
-from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, ProtocolParser, ReqPacket, append_crc, EnumStageStatus, EnumStatus, EnumImageSize, EnumImgDepth, ImageReq, NavParam, EnumBeamSize
+from zemrpc.zem.conn.protocol import (
+    EnumAutofocusStatus,
+    EnumCmd,
+    ProtocolParser,
+    ReqPacket,
+    append_crc,
+    EnumStageStatus,
+    EnumStatus,
+    EnumImageSize,
+    EnumImgDepth,
+    ImageReq,
+    NavParam,
+    EnumBeamSize,
+    BseInfo,
+    BseQuadrant,
+    EnumBsePhase,
+)
 
 
 class ZemRespBuilder:
@@ -77,6 +93,10 @@ class ZemRespBuilder:
     def build_get_hv_info(self, data):
         acc_v, beam_i = data
         return self.build_set(EnumCmd.GetHV, f"{acc_v:.4f},{beam_i:.4f}")
+
+    def build_get_bse_cfg(self, cfg: BseInfo):
+        v = [f"{q.phase.value},{q.bias}" for q in cfg.quadrants]
+        return self.build_set(EnumCmd.GetBseCfg, ",".join(v))
 
     def build_get_model(self, model_str: str):
         return self.build_set(EnumCmd.GetModel, model_str)
@@ -212,6 +232,7 @@ class VirtualZem:
         self.ob = 30000
         self.wd = 11
         self.beam_size = EnumBeamSize.Coarse
+        self.bse_cfg = BseInfo()
         self.acc_v = 9846.5768
         self.beam_i = 26.8173
         self.is_video_alive = True
@@ -484,6 +505,10 @@ class RemoteZem(threading.Thread):
             self._send(packet.addr, self.builder.build_get_hv_info(self.zem_dev.hv_info))
         elif cmd == EnumCmd.SetHV:
             self._send(packet.addr, self.resp_set_hv(packet))
+        elif cmd == EnumCmd.GetBseCfg:
+            self._send(packet.addr, self.builder.build_get_bse_cfg(self.zem_dev.bse_cfg))
+        elif cmd == EnumCmd.SetBseCfg:
+            self._send(packet.addr, self.resp_set_bse_cfg(packet))
         elif cmd == EnumCmd.GetModel:
             self._send(packet.addr, self.builder.build_get_model(self.zem_dev.model))
         elif cmd == EnumCmd.IsVideoAlive:
@@ -507,6 +532,10 @@ class RemoteZem(threading.Thread):
     def resp_set_hv(self, packet: ReqPacket):
         self.zem_dev.acc_v = packet.parse_hv() * 1000
         return self.builder.build_ack(EnumCmd.SetHV)
+
+    def resp_set_bse_cfg(self, packet: ReqPacket):
+        self.zem_dev.bse_cfg = packet.parse_bse_cfg()
+        return self.builder.build_ack(EnumCmd.SetBseCfg)
 
     def resq_set_rotation(self, packet: ReqPacket):
         rot_degree = packet.parse_rotation()
