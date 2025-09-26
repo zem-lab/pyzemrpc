@@ -9,9 +9,10 @@ import collections
 from enum import Enum
 from pathlib import Path
 from typing import Optional, Tuple
+from functools import cached_property
 from pydantic import Field, computed_field
 
-from jgb.util import cv_util
+from jgb.util import cv_util, pkl_util, time_util
 from jgb.util.pydantic_util import DefaultModel, NumpyNDArray
 from jgb.util.enum_util import EnumWithCode
 
@@ -181,21 +182,33 @@ class ImageMeta(DefaultModel):
 
 
 class ZemImage(DefaultModel):
+    pkl: Path = Field(default=None)
     img: NumpyNDArray = Field(default=None)
     bounds: Bounds
     meta: ImageMeta
 
-    def dump(self, png: Path, **kwargs):
+    def dump(self, png: Path, raw=True, u8=True, pkl=True, **kwargs):
         meta = self.meta.to_png_meta()
+
         if png.is_dir() or png.suffix == "":
             ts = zu.cvt_image_time_str(meta[ImageMetaItem.Date])
             png = png / f"{ts}.png"
-        meta = {k.value: str(v) for k, v in meta.items()}
-        meta.update(kwargs.get("meta", {}))
-        zu.write_zem_img_with_meta(png, self.img, meta)
 
-        img = normalize_with_drop(self.img)
-        cv_util.imwrite(png.parent / f"{png.stem}.u8.png", img)
+        if raw:
+            meta = {k.value: str(v) for k, v in meta.items()}
+            meta.update(kwargs.get("meta", {}))
+            zu.write_zem_img_with_meta(png, self.img, meta)
+
+        if u8:
+            cv_util.imwrite(png.parent / f"{png.stem}.u8.png", self.u8, debug=False)
+
+        if pkl:
+            self.pkl = png.with_suffix(".pkl")
+            pkl_util.dump(self.pkl, self)
+
+    @cached_property
+    def u8(self):
+        return normalize_with_drop(self.img)
 
 
 class NavImage(DefaultModel):

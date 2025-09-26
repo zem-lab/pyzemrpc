@@ -320,7 +320,7 @@ class ZemApi(AppTreeNodeRequiredMixin):
         if self.device.m.protocol_ng.is_available():
             logger.info(f"protocol_ng available: {self.device.m.protocol_ng}")
             resp = self.device.status_rpc()
-            logger.debug(f"status_rpc: {json_util.dumps(resp, indent=2)}")
+            logger.debug(f"status_rpc: {json_util.dumps(resp.model_dump(), indent=2)}")
 
         # TODO 支持RPC时切换到RPC接口同步状态信息
         self.device.get_hv()
