@@ -36,7 +36,7 @@ from jgb.conn.udp_socket import UdpSocket, UdpPacket
 from zemrpc import app_cfg
 from zemrpc.zem.context import ctx
 from zemrpc.zem.conn.img_receiver import ImgReceiver
-from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, NavParam, ScanInfo, SnapArgs, StagePos, ZemException, BseInfo
+from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, MetaItem, NavParam, ScanInfo, SnapArgs, StagePos, ZemException, BseInfo
 from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumHvStatus, EnumStageStatus, EnumVideoStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
 from zemrpc.zem.conn.rpc_protocol import JsonRpcBuilder, RespProtocolNg, RpcSnapResp, RpcStatusResp
 from zemrpc.zem import zem_util as zu
@@ -229,18 +229,25 @@ class ZemModel(AppTreeNode):
         Returns:
             ImageMeta: Complete metadata object for the acquired image
         """
-        return ImageMeta(
-            model=self.model,
-            ob=self.ob,
-            mag=self.mag,
-            avg_length=avg_length,
-            date=time_util.now_str(),
-            detector=self.ed_chanel,
-            hv_info=copy.deepcopy(self.hv_info),
-            scan_info=copy.deepcopy(self.scan_info),
-            stage_pos=copy.deepcopy(self.stage_pos),
-            zemrpc_version=f"PYZEMRPC-{app_cfg.version}",
-        )
+
+        im = ImageMeta()
+        im.set_kv(MetaItem.Model, self.model)
+        im.set_kv(MetaItem.Date, time_util.now_str())
+        im.set_kv(MetaItem.KV, self.hv_info.kv)
+        im.set_kv(MetaItem.AccVoltage, self.hv_info.acc_v)
+        im.set_kv(MetaItem.WD, self.wd)
+        im.set_kv(MetaItem.OB, self.ob)
+        im.set_kv(MetaItem.Detector, self.ed_chanel)
+        im.set_kv(MetaItem.AvgLenth, avg_length)
+        im.set_kv(MetaItem.Magnification, self.mag)
+        im.set_kv(MetaItem.FieldSize, self.scan_info.scan_um)
+        im.set_kv(MetaItem.FieldRotation, self.scan_info.rot_degree)
+        im.set_kv(MetaItem.FirmwareVersion, "UNK")
+        im.set_kv(MetaItem.Pressure, "***")
+        im.set_kv(MetaItem.Position, self.stage_pos)
+        im.set_kv(MetaItem.PyZemRpc, f"PYZEMRPC-{app_cfg.version}")
+
+        return im.m
 
     def field_with_loc(self):
         """

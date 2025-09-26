@@ -3,6 +3,7 @@
 # tr!bf tribf@tribf.com
 
 import cv2
+import addict
 import functools
 import numpy as np
 import collections
@@ -12,8 +13,8 @@ from typing import Optional, Tuple
 from functools import cached_property
 from pydantic import Field, computed_field
 
-from jgb.util import cv_util, pkl_util, time_util
-from jgb.util.pydantic_util import DefaultModel, NumpyNDArray
+from jgb.util import cv_util, pkl_util
+from jgb.util.pydantic_util import DefaultModel, NumpyNDArray, AddictDict
 from jgb.util.enum_util import EnumWithCode
 
 from zemrpc.zem import zem_util as zu
@@ -134,68 +135,73 @@ class SnapArgs(DefaultModel):
     save: bool = Field(default=False)
 
 
-class ImageMetaItem(Enum):
-    Model = "Model"
-    AccVoltage = "ACC Voltage"
-    AvgLenth = "AvLenth"
-    Date = "Date"
-    Detector = "Detector"
-    FieldSize = "Field Size(um)"
-    FieldRotation = "Field Rotation(°)"
-    FirmwareVersion = "FirmwareVersion"
-    Pressure = "Pressure"
-    OB = "OB"
-    Zoom = "Zoom"
-    Position = "Position"
-    PyZemRpc = "PYZEMRPC"
+class MetaItem(EnumWithCode):
+    Model = "Model", "型号"
+    Date = "Date", "日期"
+    KV = "KV", "加速电压(KV)"
+    AccVoltage = "AccVoltage", "加速电压(V)"
+    AvgLenth = "AvLenth", "点平均数"
+    Detector = "Detector", "探测器"
+    PixelSize = "PixelSize", "像素尺寸(nm)"
+    FieldSize = "FieldSize", "场大小(um)"
+    FieldRotation = "FieldRotation", "场旋转(°)"
+    DigitalRotation = "DigitalRotation", "数字旋转(°)"
+    AnalogRotation = "AnalogRotation", "模拟旋转(°)"
+    ScanK = "ScanK", "扫描档位"
+    ScanDA = "ScanDA", "扫描DA"
+    AnalogBias = "AnalogBias", "模拟偏置"
+    FirmwareVersion = "FirmwareVersion", "固件版本"
+    Pressure = "Pressure", "真空"
+    OB = "OB", "物镜值"
+    WD = "WD", "工作距离(mm)"
+    Magnification = "Magnification", "放大倍数"
+    Position = "Position", "样品台位置(xyzrt)"
+    PyZemRpc = "PyZemRpc", "PyZemRpc版本"
+
+    @property
+    def name(self):
+        return self.value[0]
 
 
-class ImageMeta(DefaultModel):
-    model: str
-    ob: int
-    mag: int
-    avg_length: int
-    date: str
-    detector: str
-    hv_info: HvInfo
-    scan_info: ScanInfo
-    stage_pos: StagePos
-    zemrpc_version: str
+class ImageMeta:
+    def __init__(self, meta=None):
+        self.meta = {}
+        self.update(meta)
 
-    def to_png_meta(self):
-        meta = {
-            ImageMetaItem.Model: self.model,
-            ImageMetaItem.AccVoltage: self.hv_info.kv,
-            ImageMetaItem.AvgLenth: self.avg_length,
-            ImageMetaItem.Date: self.date,
-            ImageMetaItem.Detector: self.detector,
-            ImageMetaItem.FieldSize: self.scan_info.scan_um,
-            ImageMetaItem.FieldRotation: self.scan_info.rot_degree,
-            ImageMetaItem.FirmwareVersion: "UNK",
-            ImageMetaItem.Pressure: "***",
-            ImageMetaItem.OB: self.ob,
-            ImageMetaItem.Zoom: self.mag,
-            ImageMetaItem.Position: self.stage_pos,
-            ImageMetaItem.PyZemRpc: self.zemrpc_version,
-        }
-        return meta
+    @property
+    def m(self):
+        return addict.Dict(self.meta)
+
+    def set_kv(self, k: MetaItem, v):
+        self.meta[k] = v
+        return self
+
+    def update(self, d):
+        if d is None:
+            return
+
+        self.meta.update(d)
+        return self
+
+    def get_prop(self, key: str):
+        if isinstance(key, str) and hasattr(self, key):
+            return getattr(self, key)
+        key = MetaItem.from_code(key) if isinstance(key, str) else key
+        return self.meta.get(key, None)
 
 
 class ZemImage(DefaultModel):
     pkl: Path = Field(default=None)
     img: NumpyNDArray = Field(default=None)
-    bounds: Bounds
-    meta: ImageMeta
+    meta: AddictDict = Field(default=None, exclude=True)
 
     def dump(self, png: Path, raw=True, u8=True, pkl=True, **kwargs):
-        meta = self.meta.to_png_meta()
-
         if png.is_dir() or png.suffix == "":
-            ts = zu.cvt_image_time_str(meta[ImageMetaItem.Date])
+            ts = zu.cvt_image_time_str(self.meta[MetaItem.Date])
             png = png / f"{ts}.png"
 
         if raw:
-            meta = {k.value: str(v) for k, v in meta.items()}
+            meta = self.meta2dict()
             meta.update(kwargs.get("meta", {}))
             zu.write_zem_img_with_meta(png, self.img, meta)
 
@@ -205,6 +211,21 @@ class ZemImage(DefaultModel):
         if pkl:
             self.pkl = png.with_suffix(".pkl")
             pkl_util.dump(self.pkl, self)
+
+    def meta2dict(self):
+        d = {}
+        for k, v in self.meta.items():
+            if isinstance(k, MetaItem):
+                d[k.name] = str(v)
+            elif isinstance(k, str):
+                d[k] = str(v)
+            else:
+                d[str(k)] = str(v)
+        return d
+
+    @property
+    def bounds(self):
+        return self.meta.get("bounds", None)
 
     @cached_property
     def u8(self):

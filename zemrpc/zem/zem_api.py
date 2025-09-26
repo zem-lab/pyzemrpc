@@ -294,9 +294,9 @@ class ZemApi(AppTreeNodeRequiredMixin):
     def snap_v1(self, snap_args: SnapArgs, **kwargs):
         img = self.device.snap_simple(snap_args)
         meta = self.device.m.to_img_meta(snap_args.pixel_avg)
-        bounds = FieldWithLoc(scan_info=self.device.m.scan_info, pos=self.device.m.stage_pos).img_bounds()
+        meta.bounds = FieldWithLoc(scan_info=self.device.m.scan_info, pos=self.device.m.stage_pos).img_bounds()
         img = self.img_processor_mgr(img)
-        zem_img = ZemImage(img=img, meta=meta, bounds=bounds)
+        zem_img = ZemImage(img=img, meta=meta)
         return zem_img
 
     def snap_ng(self, snap_args: SnapArgs, **kwargs):
@@ -305,10 +305,10 @@ class ZemApi(AppTreeNodeRequiredMixin):
             raise ZemException.snap_ng_failed(f"ZEMRPC snap_ng failed: {resp.error}")
 
         img = resp.parse_image()
-        bounds = resp.parse_img_bounds()
         meta = self.device.m.to_img_meta(snap_args.pixel_avg)
+        meta.bounds = resp.parse_img_bounds()
         img = self.img_processor_mgr(img)
-        zem_img = ZemImage(img=img, meta=meta, bounds=bounds)
+        zem_img = ZemImage(img=img, meta=meta)
         # TODO meta中加入rpc结果
         return zem_img
 
