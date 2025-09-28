@@ -16,7 +16,7 @@ class CfgDb:
     def __init__(self, app_name, cfg: addict.Dict, **kwargs):
         self.cfg = cfg
         if (db_file := kwargs.get("db_file", None)) is None:
-            db_file = app_util.resolve_app_home_prod_ng(app_name, None, None) / "cfg.db"
+            db_file = app_util.resolve_app_home(app_name, None, None) / "cfg.db"
         self.kv_db = db_util.KvDataBase(db_file)
         self.update()
 
@@ -29,11 +29,8 @@ class CfgDb:
 
 class AppConfig(app_util.BaseAppConfig):
     def __init__(self):
-        self.src_home = Path(__file__).resolve().parents[1]
-
-        app_name = __title__
-        app_home = app_util.resolve_app_home(__file__)
-        super().__init__(app_home, app_name, author="Zeptools", version=__version__)
+        src_home = Path(__file__).resolve().parents[1]
+        super().__init__(src_home, app_name=__title__, pkg_name="zemrpc", author="Zeptools", version=__version__)
 
     def after_init(self):
         if cfg_db := self.cfg.get("cfg_db", None):
