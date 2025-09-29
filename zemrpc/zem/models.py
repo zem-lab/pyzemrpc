@@ -224,6 +224,10 @@ class ZemImage(DefaultModel):
         return d
 
     @property
+    def pixel_size(self):
+        return self.meta.get(MetaItem.PixelSize, None)
+
+    @property
     def bounds(self):
         return self.meta.get("bounds", None)
 

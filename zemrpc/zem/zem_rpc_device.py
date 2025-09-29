@@ -219,12 +219,12 @@ class ZemModel(AppTreeNode):
         """
         return self.model in {"ZEM18", "ZEM18OLD", "ZEM15"}
 
-    def to_img_meta(self, avg_length):
+    def to_img_meta(self, snap_args: SnapArgs):
         """
         Create image metadata from current device state.
 
         Args:
-            avg_length: Number of frames averaged for this image
+            snap_args: Snap arguments containing image acquisition settings
 
         Returns:
             ImageMeta: Complete metadata object for the acquired image
@@ -238,10 +238,11 @@ class ZemModel(AppTreeNode):
         im.set_kv(MetaItem.WD, self.wd)
         im.set_kv(MetaItem.OB, self.ob)
         im.set_kv(MetaItem.Detector, self.ed_chanel)
-        im.set_kv(MetaItem.AvgLenth, avg_length)
+        im.set_kv(MetaItem.AvgLenth, snap_args.pixel_avg)
         im.set_kv(MetaItem.Magnification, self.mag)
         im.set_kv(MetaItem.FieldSize, self.scan_info.scan_um)
         im.set_kv(MetaItem.FieldRotation, self.scan_info.rot_degree)
+        im.set_kv(MetaItem.PixelSize, self.scan_info.scan_um / snap_args.size.width)
         im.set_kv(MetaItem.FirmwareVersion, "UNK")
         im.set_kv(MetaItem.Pressure, "***")
         im.set_kv(MetaItem.Position, self.stage_pos)
