@@ -272,6 +272,45 @@ class ZemApi(AppTreeNodeRequiredMixin):
 
     @ensure_sync_done
     def snap(self, **kwargs) -> ZemImage:
+        """
+        Capture a snapshot from the connected ZEM device and return it as a ZemImage.
+        This method selects the appropriate capture implementation (next-gen protocol vs.
+        legacy) based on device capabilities, updates the internal model state with
+        the captured image, optionally persists it to disk, and can (optionally) start
+        video playback.
+        Parameter resolution logic:
+        - If 'snap_args' is provided in kwargs, it is used directly.
+        - Otherwise a deep copy of self.m.snap_args is made.
+        - A top-level 'save' kwarg (if provided) overrides args.save.
+        - A kwarg 'video_on' triggers video playback if True.
+        Parameters
+        ----------
+        **kwargs :
+            snap_args : object, optional
+                An arguments container/object expected by snap_ng or snap_v1. If absent,
+                a deep-copied default (self.m.snap_args) is used.
+            save : bool, optional
+                Overrides args.save. If True, the captured image is written to
+                ctx.logdir / "images".
+            raw: bool, optional
+                If True, skips image processing (e.g., normalization). Default is False.
+            video_on : bool, optional
+                If True, calls self.video_play_on() after snapshot capture.
+        Returns
+        -------
+        ZemImage
+            The captured image object. Also stored at self.m.zem_img.
+        Side Effects
+        ------------
+        - Updates self.m.zem_img with the newly captured image.
+        - May write the image to disk if saving is enabled.
+        - May initiate video playback if 'video_on' is True.
+        Notes
+        -----
+        - Uses next-gen protocol (snap_ng) if available; otherwise falls back to snap_v1.
+        - The spelling 'video_on' is preserved from the calling convention; consider normalizing.
+        """
+
         if (args := kwargs.pop("snap_args", None)) is None:
             args = copy.deepcopy(self.m.snap_args)
             args.save = kwargs.pop("save", args.save)
@@ -286,7 +325,7 @@ class ZemApi(AppTreeNodeRequiredMixin):
         if args.save:
             zem_img.dump(ctx.logdir / "images")
 
-        if kwargs.get("viedo_on", False):
+        if kwargs.get("video_on", False):
             self.video_play_on()
 
         return self.m.zem_img
@@ -295,7 +334,10 @@ class ZemApi(AppTreeNodeRequiredMixin):
         img = self.device.snap_simple(snap_args)
         meta = self.device.m.to_img_meta(snap_args)
         meta.bounds = FieldWithLoc(scan_info=self.device.m.scan_info, pos=self.device.m.stage_pos).img_bounds()
-        img = self.img_processor_mgr(img)
+
+        if not kwargs.get("raw", False):
+            img = self.img_processor_mgr(img)
+
         zem_img = ZemImage(img=img, meta=meta)
         return zem_img
 
@@ -307,7 +349,10 @@ class ZemApi(AppTreeNodeRequiredMixin):
         img = resp.parse_image()
         meta = self.device.m.to_img_meta(snap_args)
         meta.bounds = resp.parse_img_bounds()
-        img = self.img_processor_mgr(img)
+
+        if not kwargs.get("raw", False):
+            img = self.img_processor_mgr(img)
+
         zem_img = ZemImage(img=img, meta=meta)
         # TODO meta中加入rpc结果
         return zem_img
