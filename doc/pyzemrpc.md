@@ -1,3 +1,8 @@
 
-python -m pip install -i http://dc000.local:7104/zeptools/devpi/+simple/ --trusted-host dc000.local jgb==0.1.40
 
+## 开发环境
+系统中需要安装了git
+
+python -m pip install -i https://pypi.mirrors.ustc.edu.cn/simple -r requirements-dev.txt
+python -m pip install -i http://dc000.local:7104/zeptools/devpi/+simple/ --trusted-host dc000.local -r requirements.txt
+inv build
