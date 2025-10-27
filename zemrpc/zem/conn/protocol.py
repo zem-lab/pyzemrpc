@@ -658,6 +658,8 @@ class RespPacket(BaseResponse):
     def parse_img_resp(self) -> ImageResp:
         try:
             req, svr_name, ip, port, depth, width, height, crc = self._re_img.findall(self.data_str)[0]
+            if "addr" in self.extra:
+                ip = self.extra["addr"][0]
             return ImageResp(req, svr_name, ip, int(port), int(depth), int(width), int(height))
         except Exception:
             logger.error(f"解析ImageResp失败: {self.data_str}")
