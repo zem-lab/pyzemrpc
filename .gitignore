@@ -158,3 +158,4 @@ dist/
 # Temporary files
 temp/
 tmp/
+zemrpc/__commit__.py
