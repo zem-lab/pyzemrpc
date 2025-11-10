@@ -787,6 +787,104 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         self.m.scan_info = si
         return self.m.scan_info
 
+    def get_allow_open_gun(self) -> bool:
+        """
+        Get whether gun opening is allowed.
+
+        Returns:
+            bool: True if gun opening is allowed, False otherwise
+        """
+        resp = self.send(self.builder.build_get_allow_open_gun())
+        self.m.allow_open_gun = resp.parse_allow_open_gun()
+        return self.m.allow_open_gun
+
+    def get_is_open_gun(self) -> bool:
+        """
+        Get whether gun is currently open.
+
+        Returns:
+            bool: True if gun is open, False otherwise
+        """
+        resp = self.send(self.builder.build_get_is_open_gun())
+        self.m.is_open_gun = resp.parse_is_open_gun()
+        return self.m.is_open_gun
+
+    def get_is_changing_samp(self) -> int:
+        """
+        Get sample changing status.
+
+        Returns:
+            int: -1 for gun chamber changing, 0 for normal, 1 for sample chamber changing
+        """
+        resp = self.send(self.builder.build_get_is_changing_samp())
+        self.m.is_changing_samp = resp.parse_is_changing_samp()
+        return self.m.is_changing_samp
+
+    def get_set_hv(self) -> float:
+        """
+        Get set high voltage value.
+
+        Returns:
+            float: Set acceleration voltage value
+        """
+        resp = self.send(self.builder.build_get_set_hv())
+        self.m.set_hv = resp.parse_set_hv()
+        return self.m.set_hv
+
+    def set_compress_a(self, value: float) -> float:
+        """
+        Set compression lens A value.
+
+        Args:
+            value (float): Compression percentage (0-100)
+
+        Returns:
+            float: New compression value if successful, None if failed
+        """
+        resp = self.send(self.builder.build_set_compress_a(value))
+        if resp.is_ack_ok():
+            self.m.compress_a = value
+            return value
+        return None
+
+    def get_compress_a(self) -> float:
+        """
+        Get compression lens A value.
+
+        Returns:
+            float: Current compression A percentage (0-100)
+        """
+        resp = self.send(self.builder.build_get_compress_a())
+        self.m.compress_a = resp.parse_compress_a()
+        return self.m.compress_a
+
+    def set_compress_b(self, value: float) -> float:
+        """
+        Set compression lens B value.
+
+        Args:
+            value (float): Compression percentage (0-100)
+
+        Returns:
+            float: New compression value if successful, None if failed
+        """
+        resp = self.send(self.builder.build_set_compress_b(value))
+        if resp.is_ack_ok():
+            self.m.compress_b = value
+            return value
+        return None
+
+    def get_compress_b(self) -> float:
+        """
+        Get compression lens B value.
+
+        Returns:
+            float: Current compression B percentage (0-100)
+        """
+        resp = self.send(self.builder.build_get_compress_b())
+        self.m.compress_b = resp.parse_compress_b()
+        return self.m.compress_b
+
     def ensure_connected(self):
         """
         Verify device connection is established.

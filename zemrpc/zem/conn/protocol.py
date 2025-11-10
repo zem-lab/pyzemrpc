@@ -189,6 +189,14 @@ class EnumCmd(Enum):
     GetBseCfg         = "GetBseCfg",                    False, 1000,     "获取BSE探测器设置"
     SetBseCfg         = "SetBseCfg",                    True,  1000,     "设置BSE探测器设置"
     ZemRpc            = "ZemRpc",                       True,  100,      "ZemRpc"
+    AllowOpenGun      = "AllowOpenGun",                 False, 100,      "允许打开枪头"
+    IsOpenGun         = "IsOpenGun",                    False, 100,      "是否打开枪头"
+    IsChangingSamp    = "IsChangingSamp",               False, 100,      "是否正在换样"
+    GetSetHV          = "GetSetHV",                     False, 100,      "获取设置高压"
+    SetCompressA      = "SetCompressA",                 True,  100,      "设置压缩A值"
+    GetCompressA      = "GetCompressA",                 False, 100,      "获取压缩A值"
+    SetCompressB      = "SetCompressB",                 True,  100,      "设置压缩B值"
+    GetCompressB      = "GetCompressB",                 False, 100,      "获取压缩B值"
 
     @property
     def cmd(self):
@@ -434,6 +442,34 @@ class ProtocolBuilder:
     def build_json_rpc(self, req: dict):
         data = base64.b64encode(json_util.dumps(req).encode()).decode()
         return self.build_set(EnumCmd.ZemRpc, data)
+
+    def build_get_allow_open_gun(self):
+        return self.build_get(EnumCmd.AllowOpenGun)
+
+    def build_get_is_open_gun(self):
+        return self.build_get(EnumCmd.IsOpenGun)
+
+    def build_get_is_changing_samp(self):
+        return self.build_get(EnumCmd.IsChangingSamp)
+
+    def build_get_set_hv(self):
+        return self.build_get(EnumCmd.GetSetHV)
+
+    def build_set_compress_a(self, value: float):
+        # value: 0-100 百分比
+        value = math_util.clamp(value, 0, 100)
+        return self.build_set(EnumCmd.SetCompressA, f"{value:.2f}")
+
+    def build_get_compress_a(self):
+        return self.build_get(EnumCmd.GetCompressA)
+
+    def build_set_compress_b(self, value: float):
+        # value: 0-100 百分比
+        value = math_util.clamp(value, 0, 100)
+        return self.build_set(EnumCmd.SetCompressB, f"{value:.2f}")
+
+    def build_get_compress_b(self):
+        return self.build_get(EnumCmd.GetCompressB)
 
     def append_ip_port(self, message):
         message = "$" + message
@@ -681,6 +717,24 @@ class RespPacket(BaseResponse):
         s = base64.b64decode(self._parse_1()).decode()
         logger.debug(f"ZemRpc: {s}")
         return json.loads(s)
+
+    def parse_allow_open_gun(self) -> bool:
+        return self._parse_1().lower() == "true"
+
+    def parse_is_open_gun(self) -> bool:
+        return self._parse_1().lower() == "true"
+
+    def parse_is_changing_samp(self) -> bool:
+        return self._parse_1().lower() == "true"
+
+    def parse_set_hv(self) -> float:
+        return float(self._parse_1())
+
+    def parse_compress_a(self) -> float:
+        return float(self._parse_1())
+
+    def parse_compress_b(self) -> float:
+        return float(self._parse_1())
 
     def _parse_1(self):
         req, val, crc = self._re_1.findall(self.data_str)[0]
