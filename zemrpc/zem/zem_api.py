@@ -109,12 +109,14 @@ class ZemApi(AppTreeNodeRequiredMixin):
     def api_state_changed(self, event_data: EventData):
         self.m.api_state = event_data.state.value
 
-    def update_remote_addr(self, addr: Tuple[str, int]):
+    def update_remote_addr(self, addr: Tuple[str, int], sync=True):
         self.device.update_remote_addr(addr)
         self.machine.disable()
         self.machine.enable()
         self._init_sync = False
         # TODO 如果支持RPC接口，一次性同步状态信息
+        if sync:
+            self.sync()
 
     def send_cmd(self, cmd: EnumCmd, args: str = None):
         self.device.ensure_connected()

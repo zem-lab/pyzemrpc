@@ -192,7 +192,7 @@ class ImageMeta:
 
 class ZemImage(DefaultModel):
     pkl: Path = Field(default=None)
-    img: NumpyNDArray = Field(default=None)
+    img: NumpyNDArray = Field(default=None, exclude=True)
     meta: AddictDict = Field(default=None, exclude=True)
 
     def dump(self, png: Path, raw=True, u8=True, pkl=True, **kwargs):
@@ -234,6 +234,20 @@ class ZemImage(DefaultModel):
     @cached_property
     def u8(self):
         return normalize_with_drop(self.img)
+
+    def calc_stage_xy(self, px, py):
+        pixel_size = self.pixel_size
+        if pixel_size is None:
+            return None
+
+        pos = self.meta.get(MetaItem.Position, None)
+        if pos is None:
+            return None
+
+        h, w = self.img.shape[:2]
+        dx, dy = -1 * (px - w / 2) * pixel_size, (py - h / 2) * pixel_size
+        xy0 = pos.xy()
+        return np.array([xy0[0] + dx, xy0[1] + dy])
 
 
 class NavImage(DefaultModel):
