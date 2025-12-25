@@ -327,6 +327,12 @@ class ZemState(Enum):
     RunningTask = "RunningTask"
 
 
+class ResultCode(Enum):
+    """结果码枚举，用于异步命令返回"""
+    NoErr = 0       # 成功
+    ExeErr = 1      # 执行错误（设备未就绪）
+
+
 class ZemException(Exception):
     class Code(Enum):
         ConnTimeout = 10001

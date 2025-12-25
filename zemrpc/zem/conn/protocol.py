@@ -197,6 +197,7 @@ class EnumCmd(Enum):
     GetCompressA      = "GetCompressA",                 False, 100,      "获取压缩A值"
     SetCompressB      = "SetCompressB",                 True,  100,      "设置压缩B值"
     GetCompressB      = "GetCompressB",                 False, 100,      "获取压缩B值"
+    OpenVAC           = "OpenVAC",                      False, 100,      "启动真空"
 
     @property
     def cmd(self):
@@ -470,6 +471,9 @@ class ProtocolBuilder:
 
     def build_get_compress_b(self):
         return self.build_get(EnumCmd.GetCompressB)
+
+    def build_open_vac(self):
+        return self.build_get(EnumCmd.OpenVAC)
 
     def append_ip_port(self, message):
         message = "$" + message
