@@ -914,6 +914,31 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         threading.Thread(target=_open_vac_async, daemon=True).start()
         return ResultCode.NoErr
 
+    def release_vac(self) -> ResultCode:
+        """
+        异步卸载真空。
+
+        该命令立即返回，真空卸载过程在后台执行。
+        外部客户端可以通过发送 ReleaseVAC 命令来卸载真空。
+
+        Returns:
+            ResultCode: ResultCode.NoErr 表示成功启动，ResultCode.ExeErr 表示设备未就绪
+        """
+        # 检查设备是否已连接
+        if self.m.addr[0] == "UNK":
+            return ResultCode.ExeErr
+
+        def _release_vac_async():
+            """后台执行真空卸载"""
+            try:
+                self.pubsub_send(self.builder.build_release_vac())
+            except Exception as e:
+                logger.error(f"ReleaseVAC 执行失败: {e}")
+
+        # 在后台线程中执行真空卸载，立即返回
+        threading.Thread(target=_release_vac_async, daemon=True).start()
+        return ResultCode.NoErr
+
     def ensure_connected(self):
         """
         Verify device connection is established.
