@@ -348,6 +348,246 @@ class MandelbrotZem(VirtualZem):
             return EnumImgDepth.U8, img
 
 
+class PerlinZem(VirtualZem):
+    """
+    基于柏林噪声的虚拟电镜
+
+    特性：
+    1. 使用柏林噪声算法生成类似电镜图像的纹理
+    2. 支持无限放大，使用分形布朗运动(FBM)叠加多层噪声
+    3. 同一区域多次生成的图案完全一致（确定性）
+    4. 导航图和拍照图使用相同的噪声场，保证一致性
+    """
+
+    def __init__(self, seed=42):
+        super().__init__()
+        self.model = "VirtualZem/PerlinZem"
+        self.seed = seed
+        self._init_permutation_table()
+
+        # 导航图参数 (640x480)
+        self.nav_width = 640
+        self.nav_height = 480
+
+        # 导航图对应的物理范围 (um)
+        # 基于 MandelbrotZem 的逻辑: s = 250/500*1000 = 500um 的视野
+        self.nav_scale = 500  # um, 导航图覆盖的物理范围
+
+        # 柏林噪声的基础频率 (控制纹理细节程度)
+        self.base_frequency = 0.05
+
+    def _init_permutation_table(self):
+        """初始化确定性的排列表，用于柏林噪声计算"""
+        rng = np.random.default_rng(self.seed)
+        p = np.arange(256, dtype=np.int32)
+        rng.shuffle(p)
+        # 复制一份以避免边界检查
+        self.perm = np.concatenate([p, p])
+
+        # 预计算梯度向量 (8个方向)
+        self.gradients = np.array([[1, 1], [-1, 1], [1, -1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]], dtype=np.float64)
+
+    def _fade(self, t):
+        """平滑插值函数: 6t^5 - 15t^4 + 10t^3"""
+        return t * t * t * (t * (t * 6 - 15) + 10)
+
+    def _perlin_2d_vectorized(self, x, y):
+        """
+        向量化的2D柏林噪声计算
+
+        Args:
+            x: x坐标数组 (任意形状)
+            y: y坐标数组 (与x形状相同)
+
+        Returns:
+            噪声值数组，范围约为 [-1, 1]
+        """
+        # 获取整数坐标 (使用 & 255 实现周期性)
+        xi = np.floor(x).astype(np.int32) & 255
+        yi = np.floor(y).astype(np.int32) & 255
+
+        # 获取小数部分
+        xf = x - np.floor(x)
+        yf = y - np.floor(y)
+
+        # 平滑插值权重
+        u = self._fade(xf)
+        v = self._fade(yf)
+
+        # 获取四个角的哈希值
+        aa = self.perm[self.perm[xi] + yi]
+        ab = self.perm[self.perm[xi] + yi + 1]
+        ba = self.perm[self.perm[xi + 1] + yi]
+        bb = self.perm[self.perm[xi + 1] + yi + 1]
+
+        # 计算梯度点积
+        def grad_dot(hash_val, dx, dy):
+            # 使用 hash 值选择梯度向量
+            g = self.gradients[hash_val & 7]
+            return g[..., 0] * dx + g[..., 1] * dy
+
+        # 四个角的贡献
+        n00 = grad_dot(aa, xf, yf)
+        n01 = grad_dot(ab, xf, yf - 1)
+        n10 = grad_dot(ba, xf - 1, yf)
+        n11 = grad_dot(bb, xf - 1, yf - 1)
+
+        # 双线性插值
+        nx0 = n00 + u * (n10 - n00)
+        nx1 = n01 + u * (n11 - n01)
+
+        return nx0 + v * (nx1 - nx0)
+
+    def _fbm(self, x, y, octaves=8, lacunarity=2.0, persistence=0.5):
+        """
+        分形布朗运动 (Fractal Brownian Motion)
+        叠加多个不同频率和振幅的噪声层，实现无限细节
+
+        Args:
+            x, y: 坐标数组
+            octaves: 叠加的噪声层数（越多细节越丰富）
+            lacunarity: 每层频率的增长因子
+            persistence: 每层振幅的衰减因子
+
+        Returns:
+            噪声值数组，范围约为 [-1, 1]
+        """
+        value = np.zeros_like(x, dtype=np.float64)
+        amplitude = 1.0
+        frequency = 1.0
+        max_value = 0.0
+
+        for _ in range(octaves):
+            value += amplitude * self._perlin_2d_vectorized(x * frequency, y * frequency)
+            max_value += amplitude
+            amplitude *= persistence
+            frequency *= lacunarity
+
+        return value / max_value
+
+    def _generate_perlin_image(self, xmin, xmax, ymin, ymax, width, height, octaves=8, base_freq=None):
+        """
+        生成指定区域的柏林噪声图像
+
+        Args:
+            xmin, xmax, ymin, ymax: 物理坐标范围 (um)
+            width, height: 图像尺寸 (像素)
+            octaves: FBM 的层数
+            base_freq: 基础频率，None时自动根据放大倍率调整
+
+        Returns:
+            uint8 或 uint16 图像数组
+        """
+        if base_freq is None:
+            base_freq = self.base_frequency
+
+        # 创建坐标网格
+        x = np.linspace(xmin, xmax, width)
+        y = np.linspace(ymin, ymax, height)
+        xx, yy = np.meshgrid(x, y)
+
+        # 应用基础频率
+        xx_scaled = xx * base_freq
+        yy_scaled = yy * base_freq
+
+        # 生成多层噪声叠加
+        noise = self._fbm(xx_scaled, yy_scaled, octaves=octaves)
+
+        # 添加一些额外的纹理模拟电镜图像特征
+        # 1. 添加一层细节噪声
+        detail_noise = self._perlin_2d_vectorized(xx_scaled * 4, yy_scaled * 4) * 0.1
+
+        # 2. 添加一些"颗粒"效果
+        grain = self._perlin_2d_vectorized(xx_scaled * 16, yy_scaled * 16) * 0.05
+
+        # 组合
+        combined = noise + detail_noise + grain
+
+        # 归一化到 [0, 1]
+        combined = (combined + 1) / 2
+        combined = np.clip(combined, 0, 1)
+
+        return combined
+
+    @cached_property
+    def nav_perlin_img(self):
+        """缓存的导航图，只计算一次"""
+        # 导航图的物理范围
+        aspect = self.nav_width / self.nav_height
+        half_scale = self.nav_scale / 2
+
+        xmin = -half_scale * aspect
+        xmax = half_scale * aspect
+        ymin = -half_scale
+        ymax = half_scale
+
+        # 生成柏林噪声图像
+        noise = self._generate_perlin_image(xmin, xmax, ymin, ymax, self.nav_width, self.nav_height, octaves=6, base_freq=0.02)
+
+        # 转换为 uint8 BGR 图像
+        img = (noise * 255).astype(np.uint8)
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+        return img
+
+    def get_nav_img(self):
+        """获取导航图"""
+        return self.nav_perlin_img
+
+    def snap_jsonrpc(self, width: int, height: int, pixel_avg: int, frame_avg: int):
+        """JSON-RPC 方式的拍照"""
+        _, img = self._snap_perlin(width, height)
+        return img
+
+    def snap(self, req: ImageReq):
+        """响应拍照请求"""
+        width, height = 512, 512
+        if req.img_size == EnumImageSize.S1024x1024:
+            width, height = 1024, 1024
+        elif req.img_size == EnumImageSize.S2048x2048:
+            width, height = 2048, 2048
+
+        return self._snap_perlin(width, height)
+
+    def _snap_perlin(self, width, height):
+        """
+        根据当前位置和倍率生成拍照图像
+
+        关键点：
+        1. 使用 self.pos 获取当前台架位置
+        2. 使用 self.scan_um 获取当前扫描场大小
+        3. 生成对应区域的柏林噪声图像
+        """
+        # 获取当前扫描场大小 (um)
+        s = self.scan_um
+        x, y = self.pos
+
+        # 计算当前视野的物理范围
+        xmin = x - s / 2
+        xmax = x + s / 2
+        ymin = y - s / 2
+        ymax = y + s / 2
+
+        # 根据放大倍率调整细节层数
+        # 高倍率需要更多细节层
+        mag_factor = self.mag / 100
+        octaves = min(12, max(6, int(np.log2(mag_factor) + 6)))
+
+        # 生成图像
+        noise = self._generate_perlin_image(xmin, xmax, ymin, ymax, width, height, octaves=octaves)
+
+        # 垂直翻转以匹配坐标系
+        noise = np.flipud(noise)
+
+        # 根据配置的数据类型返回
+        if self.img_dtype == np.uint16:
+            img = (noise * 65535).astype(np.uint16)
+            return EnumImgDepth.U16, img
+        else:
+            img = (noise * 255).astype(np.uint8)
+            return EnumImgDepth.U8, img
+
+
 class ReplayZem(VirtualZem):
     def __init__(self, task_json: Path):
         super().__init__()
@@ -405,13 +645,15 @@ class RemoteZem(threading.Thread):
         super().__init__()
         self.daemon = True
         self.mq_event = Queue()
-        self.use_replay_zem = app_cfg.get_param("virtual_zem.replay_zem.enable", False)
+        self.zem_type = app_cfg.get_param("virtual_zem.type", "perlin")  # mandelbrot, perlin, replay
 
-        if self.use_replay_zem:
+        if self.zem_type == "mandelbrot":
+            self.zem_dev = MandelbrotZem()
+        elif self.zem_type == "perlin":
+            self.zem_dev = PerlinZem()
+        elif self.zem_type == "replay":
             task_json = app_cfg.get_param("virtual_zem.replay_zem.cap_roi_task", None)
             self.zem_dev = ReplayZem(Path(task_json))
-        else:
-            self.zem_dev = MandelbrotZem()
 
         self.udp_service = UdpService()
         self.udp_service.data_received_callback = self.data_received_handler
