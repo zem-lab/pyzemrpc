@@ -182,7 +182,12 @@ class UdpService(threading.Thread):
         super().__init__()
 
         self.server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        ip = os_util.get_default_ip()
+        # ip = os_util.get_default_ip()
+        
+        # 处理 clash 虚拟网卡(198.18.0.1)  导致获取到虚拟网卡ip  导致无法通信
+        from zemrpc.zem import ip_util
+        ip = ip_util.get_real_local_ip()
+        
         port = 61557
 
         # Bind the socket to the port
