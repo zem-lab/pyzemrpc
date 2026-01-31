@@ -350,13 +350,19 @@ class MandelbrotZem(VirtualZem):
 
 class PerlinZem(VirtualZem):
     """
-    基于柏林噪声的虚拟电镜
+    基于柏林噪声的虚拟电镜 - 增强版
 
     特性：
-    1. 使用柏林噪声算法生成类似电镜图像的纹理
-    2. 支持无限放大，使用分形布朗运动(FBM)叠加多层噪声
+    1. 使用柏林噪声 + Worley噪声 + Ridge噪声 组合生成类似电镜图像的纹理
+    2. 支持无限放大，使用多尺度噪声叠加实现无限细节
     3. 同一区域多次生成的图案完全一致（确定性）
-    4. 导航图和拍照图使用相同的噪声场，保证一致性
+    4. 高倍率时边缘清晰锐利，有明显的颗粒和晶界结构
+
+    技术细节：
+    - Worley噪声: 产生类似晶粒/细胞的锐利边缘结构
+    - Ridge噪声: 产生锐利的山脊状线性结构
+    - 自适应细节层: 根据放大倍率动态调整噪声层数
+    - 边缘锐化: 使用 Unsharp Mask 增强图像边缘
     """
 
     def __init__(self, seed=42):
@@ -364,17 +370,19 @@ class PerlinZem(VirtualZem):
         self.model = "VirtualZem/PerlinZem"
         self.seed = seed
         self._init_permutation_table()
+        self._init_worley_points()
 
         # 导航图参数 (640x480)
         self.nav_width = 640
         self.nav_height = 480
 
         # 导航图对应的物理范围 (um)
-        # 基于 MandelbrotZem 的逻辑: s = 250/500*1000 = 500um 的视野
         self.nav_scale = 500  # um, 导航图覆盖的物理范围
 
-        # 柏林噪声的基础频率 (控制纹理细节程度)
-        self.base_frequency = 0.05
+        # 噪声参数
+        self.base_frequency = 0.1  # 基础频率
+        self.worley_scale = 0.08  # Worley噪声缩放
+        self.ridge_scale = 0.06  # Ridge噪声缩放
 
     def _init_permutation_table(self):
         """初始化确定性的排列表，用于柏林噪声计算"""
@@ -385,73 +393,192 @@ class PerlinZem(VirtualZem):
         self.perm = np.concatenate([p, p])
 
         # 预计算梯度向量 (8个方向)
-        self.gradients = np.array([[1, 1], [-1, 1], [1, -1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]], dtype=np.float64)
+        self.gradients = np.array(
+            [[1, 1], [-1, 1], [1, -1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]],
+            dtype=np.float64,
+        )
+
+    def _init_worley_points(self):
+        """初始化 Worley 噪声的特征点缓存"""
+        # 使用确定性随机数生成器
+        self.worley_rng = np.random.default_rng(self.seed + 1000)
+        # 预生成特征点偏移 (每个单元格一个点)
+        self.worley_cache = {}
+
+    def _get_worley_point(self, cell_x, cell_y):
+        """获取指定单元格的特征点位置（确定性）"""
+        key = (cell_x, cell_y)
+        if key not in self.worley_cache:
+            # 使用哈希函数生成确定性的随机位置
+            h = (cell_x * 374761393 + cell_y * 668265263) & 0xFFFFFFFF
+            h = ((h ^ (h >> 13)) * 1274126177) & 0xFFFFFFFF
+            px = (h & 0xFFFF) / 65536.0
+            py = ((h >> 16) & 0xFFFF) / 65536.0
+            self.worley_cache[key] = (cell_x + px, cell_y + py)
+        return self.worley_cache[key]
 
     def _fade(self, t):
         """平滑插值函数: 6t^5 - 15t^4 + 10t^3"""
         return t * t * t * (t * (t * 6 - 15) + 10)
 
     def _perlin_2d_vectorized(self, x, y):
-        """
-        向量化的2D柏林噪声计算
-
-        Args:
-            x: x坐标数组 (任意形状)
-            y: y坐标数组 (与x形状相同)
-
-        Returns:
-            噪声值数组，范围约为 [-1, 1]
-        """
-        # 获取整数坐标 (使用 & 255 实现周期性)
+        """向量化的2D柏林噪声计算"""
         xi = np.floor(x).astype(np.int32) & 255
         yi = np.floor(y).astype(np.int32) & 255
 
-        # 获取小数部分
         xf = x - np.floor(x)
         yf = y - np.floor(y)
 
-        # 平滑插值权重
         u = self._fade(xf)
         v = self._fade(yf)
 
-        # 获取四个角的哈希值
         aa = self.perm[self.perm[xi] + yi]
         ab = self.perm[self.perm[xi] + yi + 1]
         ba = self.perm[self.perm[xi + 1] + yi]
         bb = self.perm[self.perm[xi + 1] + yi + 1]
 
-        # 计算梯度点积
         def grad_dot(hash_val, dx, dy):
-            # 使用 hash 值选择梯度向量
             g = self.gradients[hash_val & 7]
             return g[..., 0] * dx + g[..., 1] * dy
 
-        # 四个角的贡献
         n00 = grad_dot(aa, xf, yf)
         n01 = grad_dot(ab, xf, yf - 1)
         n10 = grad_dot(ba, xf - 1, yf)
         n11 = grad_dot(bb, xf - 1, yf - 1)
 
-        # 双线性插值
         nx0 = n00 + u * (n10 - n00)
         nx1 = n01 + u * (n11 - n01)
 
         return nx0 + v * (nx1 - nx0)
 
-    def _fbm(self, x, y, octaves=8, lacunarity=2.0, persistence=0.5):
+    def _worley_2d_vectorized(self, x, y, n_closest=1):
         """
-        分形布朗运动 (Fractal Brownian Motion)
-        叠加多个不同频率和振幅的噪声层，实现无限细节
+        向量化的 Worley 噪声（细胞噪声）
+        产生锐利的边缘，类似晶粒边界
 
         Args:
             x, y: 坐标数组
-            octaves: 叠加的噪声层数（越多细节越丰富）
-            lacunarity: 每层频率的增长因子
-            persistence: 每层振幅的衰减因子
+            n_closest: 使用第n近的距离 (1=最近, 2=次近)
 
         Returns:
-            噪声值数组，范围约为 [-1, 1]
+            距离值数组，范围 [0, ~1.4]
         """
+        shape = x.shape
+        x_flat = x.flatten()
+        y_flat = y.flatten()
+        n = len(x_flat)
+
+        # 获取当前所在的单元格
+        cell_x = np.floor(x_flat).astype(np.int64)
+        cell_y = np.floor(y_flat).astype(np.int64)
+
+        # 存储最近的距离
+        min_dist = np.full(n, np.inf)
+        second_dist = np.full(n, np.inf)
+
+        # 搜索周围 3x3 的单元格
+        for di in range(-1, 2):
+            for dj in range(-1, 2):
+                # 使用哈希生成确定性的特征点位置
+                ni = cell_x + di
+                nj = cell_y + dj
+
+                # 确定性哈希函数生成特征点偏移
+                h = (ni * 374761393 + nj * 668265263).astype(np.int64) & 0xFFFFFFFF
+                h = ((h ^ (h >> 13)) * 1274126177) & 0xFFFFFFFF
+                px = ni + (h & 0xFFFF) / 65536.0
+                py = nj + ((h >> 16) & 0xFFFF) / 65536.0
+
+                # 计算距离
+                dist = np.sqrt((x_flat - px) ** 2 + (y_flat - py) ** 2)
+
+                # 更新最近和次近距离
+                mask = dist < min_dist
+                second_dist = np.where(mask, min_dist, second_dist)
+                min_dist = np.where(mask, dist, min_dist)
+
+                mask2 = (~mask) & (dist < second_dist)
+                second_dist = np.where(mask2, dist, second_dist)
+
+        if n_closest == 1:
+            return min_dist.reshape(shape)
+        else:
+            return second_dist.reshape(shape)
+
+    def _worley_edge(self, x, y):
+        """
+        Worley 边缘检测
+        使用 F2 - F1 (次近距离 - 最近距离) 产生锐利的边界线
+
+        Returns:
+            边缘强度，边界处接近0，内部接近1
+        """
+        shape = x.shape
+        x_flat = x.flatten()
+        y_flat = y.flatten()
+        n = len(x_flat)
+
+        cell_x = np.floor(x_flat).astype(np.int64)
+        cell_y = np.floor(y_flat).astype(np.int64)
+
+        min_dist = np.full(n, np.inf)
+        second_dist = np.full(n, np.inf)
+
+        for di in range(-1, 2):
+            for dj in range(-1, 2):
+                ni = cell_x + di
+                nj = cell_y + dj
+
+                h = (ni * 374761393 + nj * 668265263).astype(np.int64) & 0xFFFFFFFF
+                h = ((h ^ (h >> 13)) * 1274126177) & 0xFFFFFFFF
+                px = ni + (h & 0xFFFF) / 65536.0
+                py = nj + ((h >> 16) & 0xFFFF) / 65536.0
+
+                dist = np.sqrt((x_flat - px) ** 2 + (y_flat - py) ** 2)
+
+                mask = dist < min_dist
+                second_dist = np.where(mask, min_dist, second_dist)
+                min_dist = np.where(mask, dist, min_dist)
+
+                mask2 = (~mask) & (dist < second_dist)
+                second_dist = np.where(mask2, dist, second_dist)
+
+        # F2 - F1 产生边界
+        edge = (second_dist - min_dist).reshape(shape)
+        return edge
+
+    def _ridge_noise(self, x, y, octaves=4, lacunarity=2.0, persistence=0.5):
+        """
+        Ridge 噪声（脊线噪声）
+        通过对柏林噪声取绝对值并反转，产生锐利的山脊状结构
+
+        Returns:
+            噪声值数组，范围 [0, 1]
+        """
+        value = np.zeros_like(x, dtype=np.float64)
+        amplitude = 1.0
+        frequency = 1.0
+        max_value = 0.0
+        weight = 1.0
+
+        for _ in range(octaves):
+            # 取绝对值并反转
+            noise = 1.0 - np.abs(self._perlin_2d_vectorized(x * frequency, y * frequency))
+            # 平方使山脊更锐利
+            noise = noise * noise
+            # 权重衰减
+            noise *= weight
+            weight = np.clip(noise * 2, 0, 1)
+
+            value += amplitude * noise
+            max_value += amplitude
+            amplitude *= persistence
+            frequency *= lacunarity
+
+        return value / max_value
+
+    def _fbm(self, x, y, octaves=8, lacunarity=2.0, persistence=0.5):
+        """分形布朗运动"""
         value = np.zeros_like(x, dtype=np.float64)
         amplitude = 1.0
         frequency = 1.0
@@ -465,54 +592,136 @@ class PerlinZem(VirtualZem):
 
         return value / max_value
 
-    def _generate_perlin_image(self, xmin, xmax, ymin, ymax, width, height, octaves=8, base_freq=None):
+    def _multiscale_worley(self, x, y, scales=[1.0, 2.0, 4.0], weights=[0.5, 0.3, 0.2]):
         """
-        生成指定区域的柏林噪声图像
-
-        Args:
-            xmin, xmax, ymin, ymax: 物理坐标范围 (um)
-            width, height: 图像尺寸 (像素)
-            octaves: FBM 的层数
-            base_freq: 基础频率，None时自动根据放大倍率调整
-
-        Returns:
-            uint8 或 uint16 图像数组
+        多尺度 Worley 噪声
+        叠加不同尺度的 Worley 噪声，产生更丰富的细节
         """
-        if base_freq is None:
-            base_freq = self.base_frequency
+        result = np.zeros_like(x, dtype=np.float64)
+        total_weight = sum(weights)
 
+        for scale, weight in zip(scales, weights):
+            edge = self._worley_edge(x * scale, y * scale)
+            result += weight * edge
+
+        return result / total_weight
+
+    def _generate_perlin_image(self, xmin, xmax, ymin, ymax, width, height, mag_factor=1.0):
+        """
+        生成指定区域的增强型噪声图像
+
+        组合多种噪声类型产生类似电镜的图像：
+        1. Worley噪声：晶粒结构，锐利边界
+        2. Ridge噪声：脊线状结构
+        3. Perlin FBM：平滑的背景变化
+        """
         # 创建坐标网格
         x = np.linspace(xmin, xmax, width)
         y = np.linspace(ymin, ymax, height)
         xx, yy = np.meshgrid(x, y)
 
-        # 应用基础频率
-        xx_scaled = xx * base_freq
-        yy_scaled = yy * base_freq
+        # 根据放大倍率动态调整参数
+        # 高倍率时增加细节层数
+        base_octaves = 6
+        extra_octaves = int(np.log2(max(1, mag_factor / 100))) if mag_factor > 100 else 0
+        octaves = min(16, base_octaves + extra_octaves)
 
-        # 生成多层噪声叠加
-        noise = self._fbm(xx_scaled, yy_scaled, octaves=octaves)
+        # 1. Worley 噪声 - 主要的晶粒结构
+        worley_freq = self.worley_scale * (1 + 0.1 * np.log2(max(1, mag_factor / 100)))
+        worley_x = xx * worley_freq
+        worley_y = yy * worley_freq
 
-        # 添加一些额外的纹理模拟电镜图像特征
-        # 1. 添加一层细节噪声
-        detail_noise = self._perlin_2d_vectorized(xx_scaled * 4, yy_scaled * 4) * 0.1
+        # 多尺度 Worley 产生不同大小的颗粒
+        scales = [1.0, 2.5, 6.0]
+        weights = [0.5, 0.3, 0.2]
+        worley_multi = self._multiscale_worley(worley_x, worley_y, scales, weights)
 
-        # 2. 添加一些"颗粒"效果
-        grain = self._perlin_2d_vectorized(xx_scaled * 16, yy_scaled * 16) * 0.05
+        # 基本 Worley 距离场
+        worley_dist = self._worley_2d_vectorized(worley_x, worley_y)
 
-        # 组合
-        combined = noise + detail_noise + grain
+        # 2. Ridge 噪声 - 锐利的线性结构
+        ridge_freq = self.ridge_scale * (1 + 0.1 * np.log2(max(1, mag_factor / 100)))
+        ridge_x = xx * ridge_freq
+        ridge_y = yy * ridge_freq
+        ridge = self._ridge_noise(ridge_x, ridge_y, octaves=min(8, octaves))
 
-        # 归一化到 [0, 1]
-        combined = (combined + 1) / 2
+        # 3. Perlin FBM - 平滑的背景
+        perlin_freq = self.base_frequency
+        perlin_x = xx * perlin_freq
+        perlin_y = yy * perlin_freq
+        perlin = self._fbm(perlin_x, perlin_y, octaves=octaves)
+        perlin = (perlin + 1) / 2  # 归一化到 [0, 1]
+
+        # 4. 高频细节噪声 - 纳米级颗粒感
+        if mag_factor > 1000:
+            # 高倍率时添加更多细节
+            detail_freq = perlin_freq * 20 * (1 + np.log10(mag_factor / 1000))
+            detail_x = xx * detail_freq
+            detail_y = yy * detail_freq
+            detail = self._perlin_2d_vectorized(detail_x, detail_y) * 0.1
+        else:
+            detail = 0
+
+        # 组合各种噪声
+        # Worley 边缘产生晶界
+        edge_strength = np.clip(worley_multi * 2, 0, 1)
+        # 使用 sigmoid 函数使边缘更锐利
+        edge_sharp = 1 / (1 + np.exp(-10 * (edge_strength - 0.3)))
+
+        # 晶粒内部的灰度变化
+        grain_interior = worley_dist * 0.5 + perlin * 0.3 + ridge * 0.2
+
+        # 组合：边界暗，内部有纹理
+        combined = grain_interior * edge_sharp + (1 - edge_sharp) * 0.1
+
+        # 添加高频细节
+        combined = combined + detail
+
+        # 全局对比度调整
         combined = np.clip(combined, 0, 1)
 
+        # 直方图拉伸增强对比度
+        p2, p98 = np.percentile(combined, [2, 98])
+        if p98 > p2:
+            combined = (combined - p2) / (p98 - p2)
+            combined = np.clip(combined, 0, 1)
+
         return combined
+
+    def _sharpen_image(self, img, strength=1.0):
+        """
+        使用 Unsharp Mask 锐化图像
+
+        Args:
+            img: 输入图像 (uint8 或 uint16)
+            strength: 锐化强度 (0-2)
+
+        Returns:
+            锐化后的图像
+        """
+        if strength <= 0:
+            return img
+
+        # 高斯模糊
+        if img.dtype == np.uint16:
+            img_float = img.astype(np.float32) / 65535
+        else:
+            img_float = img.astype(np.float32) / 255
+
+        blurred = cv2.GaussianBlur(img_float, (0, 0), 1.5)
+
+        # Unsharp Mask: 原图 + (原图 - 模糊图) * 强度
+        sharpened = img_float + strength * (img_float - blurred)
+        sharpened = np.clip(sharpened, 0, 1)
+
+        if img.dtype == np.uint16:
+            return (sharpened * 65535).astype(np.uint16)
+        else:
+            return (sharpened * 255).astype(np.uint8)
 
     @cached_property
     def nav_perlin_img(self):
         """缓存的导航图，只计算一次"""
-        # 导航图的物理范围
         aspect = self.nav_width / self.nav_height
         half_scale = self.nav_scale / 2
 
@@ -521,8 +730,10 @@ class PerlinZem(VirtualZem):
         ymin = -half_scale
         ymax = half_scale
 
-        # 生成柏林噪声图像
-        noise = self._generate_perlin_image(xmin, xmax, ymin, ymax, self.nav_width, self.nav_height, octaves=6, base_freq=0.02)
+        # 导航图使用较低的放大倍率参数
+        noise = self._generate_perlin_image(
+            xmin, xmax, ymin, ymax, self.nav_width, self.nav_height, mag_factor=100
+        )
 
         # 转换为 uint8 BGR 图像
         img = (noise * 255).astype(np.uint8)
@@ -556,7 +767,8 @@ class PerlinZem(VirtualZem):
         关键点：
         1. 使用 self.pos 获取当前台架位置
         2. 使用 self.scan_um 获取当前扫描场大小
-        3. 生成对应区域的柏林噪声图像
+        3. 生成对应区域的增强型噪声图像
+        4. 高倍率时自动增加细节和锐化
         """
         # 获取当前扫描场大小 (um)
         s = self.scan_um
@@ -568,23 +780,29 @@ class PerlinZem(VirtualZem):
         ymin = y - s / 2
         ymax = y + s / 2
 
-        # 根据放大倍率调整细节层数
-        # 高倍率需要更多细节层
-        mag_factor = self.mag / 100
-        octaves = min(12, max(6, int(np.log2(mag_factor) + 6)))
+        # 计算放大倍率因子 (相对于100倍)
+        mag_factor = self.mag
 
         # 生成图像
-        noise = self._generate_perlin_image(xmin, xmax, ymin, ymax, width, height, octaves=octaves)
+        noise = self._generate_perlin_image(xmin, xmax, ymin, ymax, width, height, mag_factor=mag_factor)
 
         # 垂直翻转以匹配坐标系
         noise = np.flipud(noise)
 
-        # 根据配置的数据类型返回
+        # 根据配置的数据类型转换
         if self.img_dtype == np.uint16:
             img = (noise * 65535).astype(np.uint16)
+            # 高倍率时锐化
+            if mag_factor > 1000:
+                sharpen_strength = min(1.5, 0.5 + np.log10(mag_factor / 1000) * 0.5)
+                img = self._sharpen_image(img, strength=sharpen_strength)
             return EnumImgDepth.U16, img
         else:
             img = (noise * 255).astype(np.uint8)
+            # 高倍率时锐化
+            if mag_factor > 1000:
+                sharpen_strength = min(1.5, 0.5 + np.log10(mag_factor / 1000) * 0.5)
+                img = self._sharpen_image(img, strength=sharpen_strength)
             return EnumImgDepth.U8, img
 
 
