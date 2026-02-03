@@ -159,3 +159,5 @@ dist/
 temp/
 tmp/
 zemrpc/__commit__.py
+node_modules/
+*.lock
