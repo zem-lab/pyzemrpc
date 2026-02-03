@@ -36,10 +36,11 @@ from jgb.conn.udp_socket import UdpSocket, UdpPacket
 from zemrpc import app_cfg
 from zemrpc.zem.context import ctx
 from zemrpc.zem.conn.img_receiver import ImgReceiver
-from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, MetaItem, NavParam, ScanInfo, SnapArgs, StagePos, ZemException, BseInfo
+from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, MetaItem, NavParam, ScanInfo, SnapArgs, StagePos, ZemException, BseInfo, ResultCode
 from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumHvStatus, EnumStageStatus, EnumVideoStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
 from zemrpc.zem.conn.rpc_protocol import JsonRpcBuilder, RespProtocolNg, RpcSnapResp, RpcStatusResp
 from zemrpc.zem import zem_util as zu
+from zemrpc.zem import ip_util
 
 
 class HandshakePubSub(PubSub):
@@ -185,6 +186,8 @@ class ZemModel(AppTreeNode):
     wd: float = Field(default=0, on_setattr=True)
 
     hv_info: HvInfo = Field(default=None, on_setattr=True)
+    is_open_gun: bool = Field(default=False, on_setattr=True)
+
     scan_info: ScanInfo = Field(default=None, on_setattr=True)
     nav_param: NavParam = Field(default=None)
     stage_pos: StagePos = Field(default=None, on_setattr=True)
@@ -289,7 +292,8 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         self.n = ctx.add_node(self, parent=kwargs.pop("parent", None))
 
         # Initialize UDP socket for device communication
-        self.socket = UdpSocket(ctx, "zem_rpc_socket", parent=self.n, ip=os_util.get_default_ip(), port=0)
+        # Use get_real_local_ip() to filter out virtual IPs like Clash Fake-IP (198.18.0.1)
+        self.socket = UdpSocket(ctx, "zem_rpc_socket", parent=self.n, ip=ip_util.get_real_local_ip(), port=0)
 
         # Set up read-write service for packet handling
         self.rws = ReadWriteService[RespPacket](f"RWS-{self.m.node_name}", ctx, self.socket, self._do_framing, self._do_write)
