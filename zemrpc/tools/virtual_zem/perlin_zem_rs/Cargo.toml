@@ -1,0 +1,20 @@
+[package]
+name = "perlin_zem_rs"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance Perlin noise generator for virtual SEM images"
+
+[lib]
+name = "perlin_zem_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }
+numpy = "0.22"
+ndarray = { version = "0.16", features = ["rayon"] }
+rayon = "1.10"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
