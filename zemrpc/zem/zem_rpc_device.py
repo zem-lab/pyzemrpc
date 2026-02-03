@@ -578,6 +578,26 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
             if timeout < time.time() - st:
                 raise ZemException("等待高压稳定超时", ZemException.Code.SvrError)
 
+    def hv_on(self):
+        """
+        Turn on high voltage for the electron beam.
+
+        Returns:
+            HvInfo: Updated high voltage information if successful, None if failed
+        """
+        resp = self.send(self.builder.build_gun_on())
+        return resp.is_ack_ok()
+
+    def hv_off(self):
+        """
+        Turn off high voltage for the electron beam.
+
+        Returns:
+            HvInfo: Updated high voltage information if successful, None if failed
+        """
+        resp = self.send(self.builder.build_gun_off())
+        return resp.is_ack_ok()
+
     def get_mag(self):
         """
         Get current magnification setting.
