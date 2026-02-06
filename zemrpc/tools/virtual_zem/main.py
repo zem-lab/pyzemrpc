@@ -19,7 +19,7 @@ def main():
     random.seed(3366)
     try:
         zem.start()
-        uvicorn.run("zemrpc.tools.virtual_zem.main:app", host=args.host, port=args.port, access_log=True)
+        uvicorn.run(app, host=args.host, port=args.port, access_log=True)
     except KeyboardInterrupt:
         print("stop zem")
         zem.close()

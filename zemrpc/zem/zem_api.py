@@ -7,45 +7,18 @@ import copy
 from loguru import logger
 from pydantic import Field
 from typing import List, Tuple
-from transitions import Machine, EventData
 from tenacity import retry, stop_after_attempt, wait_fixed, wait_random
 
 from jgb.util import json_util, math_util
 from jgb.util.dds_util import AppTreeNode, AppTreeNodeRequiredMixin
 
 from zemrpc import app_cfg
-from zemrpc.tools.virtual_zem.virtual_zem_mgr import VZemMgr
 from zemrpc.zem.context import ctx
-from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, NavImage, NavParam, ScanInfo, SnapArgs, StageMoveDirection, StagePos, ZemException, ZemImage, ZemState
+from zemrpc.tools.virtual_zem.virtual_zem_mgr import VZemMgr
+from zemrpc.zem.models import FieldWithLoc, NavImage, NavParam, ScanInfo, SnapArgs, StageMoveDirection, StagePos, ZemException, ZemImage
 from zemrpc.zem.conn.protocol import EnumCmd
 from zemrpc.zem.zem_image_processor import ZemImageProcessorManager, normalize_with_drop
 from zemrpc.zem.zem_rpc_device import ZemRpcDevice
-
-
-class ZemApiMachine(Machine):
-    transitions = [
-        dict(trigger="enable", source=ZemState.Disable, dest=ZemState.Idel),
-        dict(trigger="disable", source="*", dest=ZemState.Disable),
-    ]
-
-    def __init__(self):
-        super().__init__(states=ZemState, transitions=self.transitions, initial=ZemState.Disable, send_event=True)
-        self.subscribe(self.state_changed_log)
-
-    def state_changed_log(self, event_data: EventData):
-        logger.info(f"api state changed: {event_data.transition.source} -> {event_data.state.name}")
-
-    def subscribe(self, func, trigger="", source="*", dest="*"):
-        for transition in self.get_transitions(trigger, source, dest):
-            transition.after.append(func)
-
-    def unsubscribe(self, func, trigger="", source="*", dest="*"):
-        for transition in self.get_transitions(trigger, source, dest):
-            if func in transition.after:
-                transition.after.remove(func)
-
-    def api_state(self) -> ZemState:
-        return self.state
 
 
 def ensure_sync_done(func):
@@ -58,9 +31,13 @@ def ensure_sync_done(func):
     return wrapper
 
 
-class ZemApiModel(AppTreeNode):
-    api_state: ZemState = Field(default=None, on_setattr=True)
+def skip_sync_check(func):
+    """标记此方法不需要同步检查"""
+    func._skip_sync_check = True
+    return func
 
+
+class ZemApiModel(AppTreeNode):
     servers: List[Tuple[str, int]] = Field(default=None)
     nav_param: NavParam = Field(default=None)
     nav_param_calibed: NavParam = Field(default=None)
@@ -76,72 +53,90 @@ class ZemApiModel(AppTreeNode):
         ctx.pub_computed_attr(self, "field_with_loc", FieldWithLoc(scan_info=si, pos=pos))
 
 
-class ZemApi(AppTreeNodeRequiredMixin):
+class ZemApiMeta(type):
+    """元类：自动为公共方法添加ensure_sync_done装饰器"""
+
+    def __new__(mcs, name, bases, namespace):
+        for attr_name, attr_value in namespace.items():
+            # 跳过私有/保护方法、特殊方法、非可调用对象和标记跳过的方法
+            if attr_name.startswith("_"):
+                continue
+            if not callable(attr_value):
+                continue
+
+            if getattr(attr_value, "_skip_sync_check", False):
+                continue
+
+            namespace[attr_name] = ensure_sync_done(attr_value)
+
+        return super().__new__(mcs, name, bases, namespace)
+
+
+class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
     def __init__(self):
         self.m = ZemApiModel(ctx=ctx)
         self.n = ctx.add_node(self)
 
         self.device = ZemRpcDevice(name="instrument", parent=self.n)
         self.vzem_mgr = VZemMgr()
-
-        self.machine = ZemApiMachine()
         self.img_processor_mgr = ZemImageProcessorManager()
-        self.m.api_state = self.machine.api_state()
-        self.machine.subscribe(self.api_state_changed)
+        self.img_processor_mgr.update(normalize_with_drop)
 
         self._init_sync = False
         if (nav_param := app_cfg.cfg_db.kv_db.get_obj("nav_param_calibed", NavParam)) is not None:
             logger.debug(f"load last nav_param_calibed: {nav_param}")
             self.m.nav_param_calibed = nav_param
 
-        self.get_hv = self.device.get_hv
-        self.get_stage_pos = self.device.get_stage_pos
-        self.check_video_play = self.device.check_video_play
-        self.is_video_playing = self.device.is_video_playing
-        self.video_play_on = self.device.video_play_on
-        self.get_ob = self.device.get_ob
-        self.get_bse_cfg = self.device.get_bse_cfg
-        self.set_bse_cfg = self.device.set_bse_cfg
-        self.set_field_rotation = self.device.set_field_rotation
-
-        self.update_img_processor(normalize_with_drop)
-
-    def api_state_changed(self, event_data: EventData):
-        self.m.api_state = event_data.state.value
-
-    def update_remote_addr(self, addr: Tuple[str, int], sync=True):
-        self.device.update_remote_addr(addr)
-        self.machine.disable()
-        self.machine.enable()
-        self._init_sync = False
-        # TODO 如果支持RPC接口，一次性同步状态信息
-        if sync:
-            self.sync()
-
-    def send_cmd(self, cmd: EnumCmd, args: str = None):
-        self.device.ensure_connected()
-        self.device.send_cmd(cmd, args)
-
+    @skip_sync_check
     def handshake(self):
         servers = self.device.handshake()
         self.m.servers = servers
         return servers
 
-    def set_beam_size(self, bs: EnumBeamSize):
-        if zem_api.is_api_state_idel():
-            return self.device.set_beam_size(bs)
+    @skip_sync_check
+    def update_remote_addr(self, addr: Tuple[str, int], sync=True):
+        self.device.update_remote_addr(addr)
+        self._init_sync = False
+        # TODO 如果支持RPC接口，一次性同步状态信息
+        if sync:
+            self.sync()
+
+    @skip_sync_check
+    def sync(self):
+        self.device.ensure_connected()
+
+        self.device.get_model()
+        self.device.get_protocol_ng()
+        if self.device.m.protocol_ng.is_available():
+            logger.info(f"protocol_ng available: {self.device.m.protocol_ng}")
+            resp = self.device.status_rpc()
+            logger.debug(f"status_rpc: {json_util.dumps(resp.model_dump(), indent=2)}")
+
+        # TODO 支持RPC时切换到RPC接口同步状态信息
+        self.device.get_hv()
+        self.device.get_stage_pos()
+        self.device.get_beam_size()
+        self.sync_scan_field()
+
+        self.get_nav_img()
+        logger.info(f"sync done: \n{json_util.dumps(self.device.m.model_dump(), indent=2)}")
+
+        self._init_sync = True
+
+    def send_cmd(self, cmd: EnumCmd, args: str = None):
+        self.device.ensure_connected()
+        self.device.send_cmd(cmd, args)
 
     def set_ob(self, ob: int, wait_stable_ms=0):
-        if zem_api.is_api_state_idel():
-            ret = self.device.set_ob(ob)
-            if ret and wait_stable_ms:
-                time.sleep(wait_stable_ms / 1000)
-            return ret
+        ret = self.device.set_ob(ob)
+        if ret and wait_stable_ms:
+            time.sleep(wait_stable_ms / 1000)
+        return ret
 
     def stage_xy_goto(self, xy):
-        self.ensure_api_state_idel()
-        self.device.set_stage_pos(StagePos(x=xy[0], y=xy[1]))
+        pos = self.device.set_stage_pos(StagePos(x=xy[0], y=xy[1]))
         self.m.field_with_loc(self.device.m.scan_info, self.device.m.stage_pos)
+        return pos
 
     @retry(reraise=True, stop=stop_after_attempt(3), wait=wait_fixed(1) + wait_random(0, 1))
     def stage_xy_goto_closed(self, xy, stable_after_idle_ms=0):
@@ -266,12 +261,6 @@ class ZemApi(AppTreeNodeRequiredMixin):
         logger.debug("use nav_param_calibed")
         return True
 
-    def with_processor(self, p):
-        return self.img_processor_mgr.with_processor(p)
-
-    def update_img_processor(self, p):
-        self.img_processor_mgr.update(p)
-
     @ensure_sync_done
     def snap(self, **kwargs) -> ZemImage:
         """
@@ -328,7 +317,7 @@ class ZemApi(AppTreeNodeRequiredMixin):
             zem_img.dump(ctx.logdir / "images")
 
         if kwargs.get("video_on", False):
-            self.video_play_on()
+            self.device.video_play_on()
 
         return self.m.zem_img
 
@@ -359,36 +348,7 @@ class ZemApi(AppTreeNodeRequiredMixin):
         # TODO meta中加入rpc结果
         return zem_img
 
-    def sync(self):
-        self.ensure_api_state_idel()
-
-        self.device.get_model()
-        self.device.get_protocol_ng()
-        if self.device.m.protocol_ng.is_available():
-            logger.info(f"protocol_ng available: {self.device.m.protocol_ng}")
-            resp = self.device.status_rpc()
-            logger.debug(f"status_rpc: {json_util.dumps(resp.model_dump(), indent=2)}")
-
-        # TODO 支持RPC时切换到RPC接口同步状态信息
-        self.device.get_hv()
-        self.device.get_stage_pos()
-        self.device.get_beam_size()
-        self.sync_scan_field()
-
-        self.get_nav_img()
-        logger.info(f"sync done: \n{json_util.dumps(self.device.m.model_dump(), indent=2)}")
-
-        self._init_sync = True
-
-    def is_api_state_idel(self):
-        return self.m.api_state == ZemState.Idel
-
-    def ensure_api_state_idel(self):
-        self.device.ensure_connected()
-
-        if not self.is_api_state_idel():
-            raise ZemException.zem_api_not_ready("Zem API 忙")
-
+    @skip_sync_check
     def start_vzem(self, vzem_type: str):
         self.vzem_mgr.start_vzem()
 

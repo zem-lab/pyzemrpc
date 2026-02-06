@@ -321,12 +321,6 @@ class EnumBeamSize(EnumWithCode):
         return cls.Unk
 
 
-class ZemState(Enum):
-    Disable = "Disable"
-    Idel = "Idel"
-    RunningTask = "RunningTask"
-
-
 class ZemException(Exception):
     class Code(Enum):
         ConnTimeout = 10001

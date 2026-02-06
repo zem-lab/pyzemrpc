@@ -19,7 +19,6 @@ Classes:
 import cv2
 import json
 import time
-import copy
 import numpy as np
 import threading
 from loguru import logger
@@ -36,7 +35,7 @@ from jgb.conn.udp_socket import UdpSocket, UdpPacket
 from zemrpc import app_cfg
 from zemrpc.zem.context import ctx
 from zemrpc.zem.conn.img_receiver import ImgReceiver
-from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, MetaItem, NavParam, ScanInfo, SnapArgs, StagePos, ZemException, BseInfo, ResultCode
+from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, MetaItem, NavParam, ScanInfo, SnapArgs, StagePos, ZemException, BseInfo
 from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumHvStatus, EnumStageStatus, EnumVideoStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
 from zemrpc.zem.conn.rpc_protocol import JsonRpcBuilder, RespProtocolNg, RpcSnapResp, RpcStatusResp
 from zemrpc.zem import zem_util as zu
