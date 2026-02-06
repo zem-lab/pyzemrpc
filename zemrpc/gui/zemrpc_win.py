@@ -63,7 +63,7 @@ class ZemRpcWidget(QWidget):
         self.ui.btn_zem_sync.clicked.connect(self._slot_btn_zem_sync)
 
         # 高压
-        self.ui.btn_hv_get.clicked.connect(zem_api.get_hv)
+        self.ui.btn_hv_get.clicked.connect(zem_api.device.get_hv)
         self.ui.btn_hv_set.clicked.connect(self._slot_btn_hv_set)
         self.ui.btn_gun_on.clicked.connect(self._slot_btn_gun_on)
         self.ui.btn_gun_off.clicked.connect(self._slot_btn_gun_off)
@@ -185,14 +185,14 @@ class ZemRpcWidget(QWidget):
         zem_api.set_mag(mag)
 
     def _slot_input_field_rotation_confirmed(self):
-        zem_api.set_field_rotation(int(self.ui.input_field_rotation.text()))
+        zem_api.device.set_field_rotation(int(self.ui.input_field_rotation.text()))
 
     def _slot_btn_play(self):
-        if zem_api.is_video_playing():
+        if zem_api.device.is_video_playing():
             zem_api.video_play_off()
             self.ui.btn_play.setText("播放")
         else:
-            zem_api.video_play_on()
+            zem_api.device.video_play_on()
             self.ui.btn_play.setText("暂停")
 
     def _slot_btn_send(self):
@@ -234,7 +234,7 @@ class ZemRpcWidget(QWidget):
 
     def _slot_btn_ob(self):
         def ob_task():
-            zem_api.get_ob()
+            zem_api.device.get_ob()
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_ob, ob_task))
 
@@ -295,7 +295,7 @@ class ZemRpcWidget(QWidget):
 
     def _slot_btn_stage_xy_pos(self):
         def stage_xy_pos_task():
-            zem_api.get_stage_pos()
+            zem_api.device.get_stage_pos()
             zem_api.sync_scan_field()
 
         def on_complete(success, result):

@@ -29,7 +29,7 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 
-if __name__ == "__main__":
+def main():
     os.environ["QT_API"] = "pyside6"
     os.environ["PYQTGRAPH_QT_LIB"] = "PySide6"
     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -44,3 +44,7 @@ if __name__ == "__main__":
     win = MainWindow()
     win.show()
     sys.exit(app.exec_())
+
+
+if __name__ == "__main__":
+    main()

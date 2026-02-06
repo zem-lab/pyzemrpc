@@ -53,6 +53,9 @@ setup_args = dict(
     long_description_content_type="text/markdown",
 
     packages=setuptools.find_packages(exclude=("tests",)),
+    package_data={
+        "zemrpc.gui": ["style.qss"],
+    },
     include_package_data=True,
     exclude_package_data={
         '': ['*.ui']
@@ -95,6 +98,7 @@ setup_args = dict(
         "console_scripts": [
             "pyzemrpc_info=zemrpc.tools.zemrpc_info:main",
             "pyzemrpc_virtual_zem=zemrpc.tools.virtual_zem.main:main",
+            "pyzemrpc_show_img_meta=zemrpc.tools.zemrpc_show_img_meta:main",
             *entry_points,
         ],
         "gui_scripts": [

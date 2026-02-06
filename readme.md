@@ -39,6 +39,13 @@
     pip install -e .
     ```
 
+3.  或者使用pypi安装
+    ```bash
+    pip install pyzemrpc
+    ```
+
+
+
 ## 🖥️ 使用 (Usage)
 
 ### 启动 GUI

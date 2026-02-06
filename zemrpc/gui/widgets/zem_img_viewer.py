@@ -5,6 +5,8 @@
 import functools
 import numpy as np
 from matplotlib.backend_bases import MouseButton, MouseEvent
+from qtpy.QtGui import QCursor
+from qtpy.QtWidgets import QMenu
 
 from jgb.gui.qt import qt_util
 from jgb.gui.qt.widgets.mpl_qpanel import QMplPanelWithToolbar
@@ -50,7 +52,18 @@ class ZemImgViewer:
             return
 
         if event.button == MouseButton.RIGHT:
-            qt_util.popup_menu(self.canvas, ("移动至此", functools.partial(self._slot_goto, (event.xdata, event.ydata))))
+            self._popup_menu(
+                [
+                    ("移动至此", functools.partial(self._slot_goto, (event.xdata, event.ydata))),
+                ]
+            )
+
+    def _popup_menu(self, items):
+        menu = QMenu(self.canvas)
+        for label, callback in items:
+            action = menu.addAction(label)
+            action.triggered.connect(callback)
+        menu.exec(QCursor.pos())
 
     def _slot_goto(self, xy, checked: bool = False):
         zem_api.stage_xy_goto(xy)

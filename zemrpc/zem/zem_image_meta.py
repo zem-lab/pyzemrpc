@@ -81,6 +81,50 @@ def read_zem15_metadata(img_path):
     return meta
 
 
+def read_zimg_metadata(img_path: Path):
+    im = Image.open(img_path)
+    width, height = im.size[0], im.size[1]
+
+    lut = {
+        "acc_voltage": "AccVoltage",
+        "kv": "KV",
+        "wd": "WD",
+        "objective_lens": "OB",
+        "avg_length": "AvLenth",
+        "date": "Date",
+        "detector": "Detector",
+        "field_size": "FieldSize",
+        "firmware_version": "FirmwareVersion",
+        "model": "Model",
+        "position": "Position",
+        "pressure": "Pressure",
+        "zoom": "Magnification",
+        "pixel_length": "PixelSize",
+        "rotation": "FieldRotation",
+        "pyzemrpc": "PyZemRpc",
+    }
+
+    d = {
+        "acc_voltage": int(float(im.text[lut["acc_voltage"]])),
+        "avg_length": im.text[lut["avg_length"]],
+        "date": im.text[lut["date"]],
+        "detector": im.text[lut["detector"]],
+        "field_size": im.text[lut["field_size"]],
+        "firmware_version": im.text.get(lut["firmware_version"], ""),
+        "model": im.text[lut["model"]],
+        "zoom": im.text[lut["zoom"]],
+    }
+    if (key := lut["position"]) in im.text:
+        d["position"] = list(im.text[key].split(","))
+    if (key := lut["pressure"]) in im.text and im.text[key] != "***":
+        d["pressure"] = im.text[key]
+
+    meta = ZemPngMeta(**d)
+    meta.pixel_length = meta.field_size / width
+    meta.metainfo_valid = True
+    return meta
+
+
 def read_zem20_metadata(img_path: Path):
     if img_path.name.endswith("png"):
         with Image.open(img_path) as im:
@@ -232,6 +276,11 @@ def read_zem_meta(img_path) -> ZemPngMeta:
         logger.debug(f"读取NewBee元信息失败: {img_path}, 错误信息: {e}")
 
     try:
+        return read_zimg_metadata(img_path)
+    except Exception as e:
+        logger.debug(f"读取zimg元信息失败: {img_path}, 错误信息: {e}")
+
+    try:
         return read_zem20_metadata(img_path)
     except Exception as e:
         logger.debug(f"读取Zem20元信息失败: {img_path}, 错误信息: {e}")
@@ -243,38 +292,3 @@ def read_zem_meta(img_path) -> ZemPngMeta:
         logger.debug(f"读取Zem20 TIFF元信息失败: {img_path}, 错误信息: {e}")
 
     return ZemPngMeta()
-
-
-if __name__ == "__main__":
-    import sys
-    import io
-
-    # 设置标准输出为 UTF-8 编码
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-
-    img_path = Path(r"C:\Users\workpc\Desktop\20251118-145805\13预烧_4.tiff")
-    infos = read_zem_meta(img_path)
-
-    print("\n" + "=" * 60)
-    print("完整的元信息:")
-    print("=" * 60)
-    print(f"模型 (model): {infos.model}")
-    print(f"固件版本 (firmware_version): {infos.firmware_version}")
-    print(f"版本 (version): {infos.version}")
-    print(f"日期 (date): {infos.date}")
-    print(f"加速电压 (acc_voltage): {infos.acc_voltage}")
-    print(f"平均长度 (avg_length): {infos.avg_length}")
-    print(f"探测器 (detector): {infos.detector}")
-    print(f"视野大小 (field_size): {infos.field_size} um")
-    print(f"物镜 (objective_lens): {infos.objective_lens}")
-    print(f"位置 (position): {infos.position}")
-    print(f"压力 (pressure): {infos.pressure}")
-    print(f"放大倍数 (zoom): {infos.zoom}")
-    print(f"像素长度 (pixel_length): {infos.pixel_length} um")
-    print(f"有效位 (significant_bit): {infos.significant_bit}")
-    print(f"有效位高 (significant_high): {infos.significant_high}")
-    print(f"有效位低 (significant_low): {infos.significant_low}")
-    print(f"标题 (title): {infos.title}")
-    print(f"备注 (note): {infos.note}")
-    print(f"元信息有效 (metainfo_valid): {infos.metainfo_valid}")
-    print("=" * 60)

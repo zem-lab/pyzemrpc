@@ -5,8 +5,8 @@
 import math
 import functools
 import numpy as np
-from qtpy.QtGui import QIcon
-from qtpy.QtWidgets import QToolButton
+from qtpy.QtGui import QCursor, QIcon
+from qtpy.QtWidgets import QMenu, QToolButton
 from matplotlib.patches import Circle, Rectangle
 from matplotlib.backend_bases import MouseButton, MouseEvent, PickEvent
 from loguru import logger
@@ -75,13 +75,19 @@ class NavImgViewer:
             return
 
         if event.button == MouseButton.RIGHT:
-            qt_util.popup_menu(
-                self.canvas,
+            self._popup_menu(
                 [
                     ("移动至此", functools.partial(self._slot_goto, (event.xdata, event.ydata))),
                     ("添加标记", functools.partial(self._slot_mark, (event.xdata, event.ydata))),
-                ],
+                ]
             )
+
+    def _popup_menu(self, items):
+        menu = QMenu(self.canvas)
+        for label, callback in items:
+            action = menu.addAction(label)
+            action.triggered.connect(callback)
+        menu.exec(QCursor.pos())
 
     def _slot_goto(self, xy, checked: bool = False):
         zem_api.stage_xy_goto(xy)
