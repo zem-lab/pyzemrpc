@@ -27,6 +27,7 @@ from zemrpc.zem.conn.protocol import (
     append_crc,
     EnumStageStatus,
     EnumStatus,
+    EnumHvStatus,
     EnumImageSize,
     EnumImgDepth,
     ImageReq,
@@ -97,6 +98,21 @@ class ZemRespBuilder:
     def build_get_bse_cfg(self, cfg: BseInfo):
         v = [f"{q.phase.value},{q.bias}" for q in cfg.quadrants]
         return self.build_set(EnumCmd.GetBseCfg, ",".join(v))
+
+    def build_get_hv_status(self, status: EnumHvStatus):
+        return self.build_set(EnumCmd.GetHvStatus, f"{status.value}")
+
+    def build_set_hv_on(self):
+        return self.build_set(EnumCmd.SetHV_ON, "")
+
+    def build_set_hv_off(self):
+        return self.build_set(EnumCmd.SetHV_OFF, "")
+
+    def build_allow_open_gun(self):
+        return self.build_set(EnumCmd.AllowOpenGun, "")
+
+    def build_is_open_gun(self, is_open: bool):
+        return self.build_set(EnumCmd.IsOpenGun, "1" if is_open else "0")
 
     def build_get_model(self, model_str: str):
         return self.build_set(EnumCmd.GetModel, model_str)
@@ -238,7 +254,7 @@ class VirtualZem:
         self.wd = 11
         self.beam_size = EnumBeamSize.Coarse
         self.bse_cfg = BseInfo()
-        self.acc_v = 9846.5768
+        self.acc_v = 5000.0  # 5 kV
         self.beam_i = 26.8173
         self.is_video_alive = True
         self.pos = [0, 0]
@@ -247,6 +263,8 @@ class VirtualZem:
         self.nav_para = NavParam(p0x=640 / 2, p0y=480 / 2, cx=200, cy=200)
         self.stage_status = EnumStageStatus.Idle
         self.autofocus_status = EnumAutofocusStatus.Idle
+        self.hv_status = EnumHvStatus.Close  # 高压状态
+        self.is_gun_open = False  # 枪头是否打开
         self.model = "VirtualZem"
         self.protocol_ng = "ZEMRPC-202409"
 
@@ -1003,6 +1021,25 @@ class RemoteZem(threading.Thread):
             self._send(packet.addr, self.builder.build_get_hv_info(self.zem_dev.hv_info))
         elif cmd == EnumCmd.SetHV:
             self._send(packet.addr, self.resp_set_hv(packet))
+        elif cmd == EnumCmd.SetHV_ON:
+            self.zem_dev.hv_status = EnumHvStatus.Changing
+            self._send(packet.addr, self.builder.build_set_hv_on())
+            # 模拟高压开启过程
+            time.sleep(0.1)
+            self.zem_dev.hv_status = EnumHvStatus.Open
+        elif cmd == EnumCmd.SetHV_OFF:
+            self.zem_dev.hv_status = EnumHvStatus.Changing
+            self._send(packet.addr, self.builder.build_set_hv_off())
+            # 模拟高压关闭过程
+            time.sleep(0.1)
+            self.zem_dev.hv_status = EnumHvStatus.Close
+            self.zem_dev.is_gun_open = False
+        elif cmd == EnumCmd.GetHvStatus:
+            self._send(packet.addr, self.builder.build_get_hv_status(self.zem_dev.hv_status))
+        elif cmd == EnumCmd.AllowOpenGun:
+            self._send(packet.addr, self.builder.build_ack(EnumCmd.AllowOpenGun))
+        elif cmd == EnumCmd.IsOpenGun:
+            self._send(packet.addr, self.builder.build_is_open_gun(self.zem_dev.is_gun_open))
         elif cmd == EnumCmd.GetBseCfg:
             self._send(packet.addr, self.builder.build_get_bse_cfg(self.zem_dev.bse_cfg))
         elif cmd == EnumCmd.SetBseCfg:
@@ -1028,7 +1065,10 @@ class RemoteZem(threading.Thread):
         return self.builder.build_ack(EnumCmd.SetOB)
 
     def resp_set_hv(self, packet: ReqPacket):
+        # 立即更新 acc_v 为设置值
         self.zem_dev.acc_v = packet.parse_hv() * 1000
+        # 模拟高压开启状态
+        self.zem_dev.is_gun_open = True
         return self.builder.build_ack(EnumCmd.SetHV)
 
     def resp_set_bse_cfg(self, packet: ReqPacket):
