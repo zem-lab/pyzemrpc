@@ -16,7 +16,7 @@ import numpy as np
 from loguru import logger
 
 from zemrpc.zem.zem_api import zem_api
-from zemrpc.zem.models import StagePos, StageMoveDirection, SnapArgs, EnumImageSize
+from zemrpc.zem.models import StagePos, StageMoveDirection, SnapArgs, EnumImageSize, EnumCmdLevel
 
 
 # 在所有测试前设置连接
@@ -24,8 +24,9 @@ from zemrpc.zem.models import StagePos, StageMoveDirection, SnapArgs, EnumImageS
 def setup_connection():
     """为所有测试设置连接"""
     logger.info("Setting up connection to virtual ZEM...")
-    # 虚拟服务器监听在本地
-    zem_api.update_remote_addr(("127.0.0.1", 61557), sync=False)
+    addr = zem_api.device.socket.m.ip, 61557
+    zem_api.update_remote_addr(addr, sync=False)
+    zem_api.device.set_work_mode(EnumCmdLevel.ADVANCED)
     logger.info("Connection setup complete")
     yield
     logger.info("Test session finished")
@@ -45,7 +46,8 @@ class TestZemApiConnection:
     def test_update_remote_addr(self):
         """测试更新远程地址"""
         logger.info("Testing update_remote_addr...")
-        zem_api.update_remote_addr(("192.168.31.140", 61557), sync=False)
+        addr = zem_api.device.socket.m.ip, 61557
+        zem_api.update_remote_addr(addr, sync=False)
         logger.success("✓ Remote address updated")
 
     def test_sync(self):
@@ -425,7 +427,8 @@ class TestZemApiIntegration:
         # 1. 握手和同步
         logger.info("Step 1: Handshake and sync")
         zem_api.handshake()
-        zem_api.update_remote_addr(("127.0.0.1", 61557), sync=True)
+        addr = zem_api.device.socket.m.ip, 61557
+        zem_api.update_remote_addr(addr, sync=True)
         assert zem_api._init_sync_done is True
         logger.success("✓ Connected and synchronized")
 

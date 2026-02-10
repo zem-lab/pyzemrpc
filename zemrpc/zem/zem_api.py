@@ -111,9 +111,10 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
 
         try:
             self._sync()
+        except Exception as e:
+            self._init_sync_done = False
         finally:
             self._init_sync_ing = False
-            self._init_sync_done = False
 
     def _sync(self):
         self._init_sync_ing = True

@@ -558,7 +558,7 @@ class ReqPacket:
         return int(self._parse_1())
 
     def parse_ob(self) -> int:
-        return int(self._parse_1())
+        return int(float(self._parse_1()) / 100 * 65535)
 
     def parse_hv(self) -> int:
         return int(self._parse_1())
