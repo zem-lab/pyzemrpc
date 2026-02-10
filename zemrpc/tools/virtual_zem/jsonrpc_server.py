@@ -48,63 +48,17 @@ def Snap(d: dict) -> Result:
                     "img": "",
                 },
             },
-            "zem": {
-                "Model": "Zem15C",
-                "State": "VideoPlaying",
-                "Hv": {
-                    "RealAccVol": 45.9114,
-                    "EmissCur": 0.3128,
-                    "FilaR": 0.0625,
-                    "GridVol": 31999.5117,
-                },
-                "BeamSz": {
-                    "BeamType": "WideBeam",
-                    "CompressA": 1650,
-                    "CompressB": 1650,
-                },
-                "ob": {
-                    "wd": 5.5,
-                    "ob": 30000,
-                },
-                "Stage": {
-                    "x": -zem.zem_dev.pos[0],
-                    "y": -zem.zem_dev.pos[1],
-                    "MotorIsStop": False,
-                },
-                "se": {
-                    "CollectVol": 0.0,
-                    "Gain": 0,
-                    "Brightness": 51462,
-                    "Contrast": 26535,
-                },
-                "bse": {
-                    "ShiftRegisterData": 90,
-                    "Brightness": 44862,
-                    "Contrast": 21383,
-                },
-                "vac": {
-                    "GunVacValue": 0.01,
-                },
-                "nav": {
-                    "p0_x": 336.94,
-                    "p0_y": 205.80,
-                    "cx": 93.333,
-                    "cy": 93.333,
-                },
-                "imaging": {
-                    "Detector": "BSE",
-                    "Magnification": zem.zem_dev.mag,
-                    "SnapImageSize": "SizeOf2048",
-                    "ScanWidth": zem.zem_dev.scan_um,
-                    "ScanHeight": zem.zem_dev.scan_um,
-                    "Rotation": zem.zem_dev.rot_degree,
-                    "AverageMode": "AverageByPoints",
-                    "SnapAvPointGear": "Gear7",
-                    "AvFrameCount": 1,
-                },
-                "core": {"da_freq": 40_000_000},
-            },
+            "zem": zem.zem_dev.get_zem_status(),
         },
+    }
+    return Success(result)
+
+
+@method
+def Status() -> Result:
+    """返回系统状态信息，与Snap中的meta.zem内容相同"""
+    result = {
+        "zem": zem.zem_dev.get_zem_status(),
     }
     return Success(result)
 

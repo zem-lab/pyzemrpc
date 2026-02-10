@@ -181,7 +181,7 @@ class ImageSender(threading.Thread):
         self._imgs = img
 
     def run(self):
-        self.server.bind((os_util.get_default_ip(), 0))
+        self.server.bind(("0.0.0.0", 0))
         self.server.listen(1)
 
         while not self._interrupted:
@@ -199,15 +199,16 @@ class UdpService(threading.Thread):
 
         self.server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         # ip = os_util.get_default_ip()
-        
+
         # 处理 clash 虚拟网卡(198.18.0.1)  导致获取到虚拟网卡ip  导致无法通信
         from zemrpc.zem import ip_util
+
         ip = ip_util.get_real_local_ip()
-        
+
         port = 61557
 
         # Bind the socket to the port
-        self.server_address = (ip, port)
+        self.server_address = ("0.0.0.0", port)
         self.daemon = True
 
         self.data_received_callback = None
@@ -288,6 +289,66 @@ class VirtualZem:
     @abstractmethod
     def snap(self, req: ImageReq):
         raise Exception("not implemented")
+
+    def get_zem_status(self):
+        """返回系统状态信息，与Snap中的meta.zem内容相同"""
+        state = "VideoPlaying" if self.is_video_alive else "Idle"
+        return {
+            "Model": "Zem15C",
+            "State": state,
+            "Hv": {
+                "RealAccVol": 45.9114,
+                "EmissCur": 0.3128,
+                "FilaR": 0.0625,
+                "GridVol": 31999.5117,
+            },
+            "BeamSz": {
+                "BeamType": "WideBeam",
+                "CompressA": 1650,
+                "CompressB": 1650,
+            },
+            "ob": {
+                "wd": self.wd,
+                "ob": self.ob,
+            },
+            "Stage": {
+                "x": -self.pos[0],
+                "y": -self.pos[1],
+                "MotorIsStop": self.stage_status == EnumStageStatus.Idle,
+            },
+            "se": {
+                "CollectVol": 0.0,
+                "Gain": 0,
+                "Brightness": 51462,
+                "Contrast": 26535,
+            },
+            "bse": {
+                "ShiftRegisterData": 90,
+                "Brightness": 44862,
+                "Contrast": 21383,
+            },
+            "vac": {
+                "GunVacValue": 0.01,
+            },
+            "nav": {
+                "p0_x": self.nav_para.p0x,
+                "p0_y": self.nav_para.p0y,
+                "cx": self.nav_para.cx,
+                "cy": self.nav_para.cy,
+            },
+            "imaging": {
+                "Detector": "BSE",
+                "Magnification": self.mag,
+                "SnapImageSize": "SizeOf2048",
+                "ScanWidth": self.scan_um,
+                "ScanHeight": self.scan_um,
+                "Rotation": self.rot_degree,
+                "AverageMode": "AverageByPoints",
+                "SnapAvPointGear": "Gear7",
+                "AvFrameCount": 1,
+            },
+            "core": {"da_freq": 40_000_000},
+        }
 
 
 @dataclass
