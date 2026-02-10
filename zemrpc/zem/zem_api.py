@@ -82,6 +82,7 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
         self.img_processor_mgr.update(normalize_with_drop)
 
         self._init_sync_done = False
+        self._init_sync_ing = False
         if (nav_param := app_cfg.cfg_db.kv_db.get_obj("nav_param_calibed", NavParam)) is not None:
             logger.debug(f"load last nav_param_calibed: {nav_param}")
             self.m.nav_param_calibed = nav_param
