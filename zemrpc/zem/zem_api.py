@@ -23,8 +23,7 @@ from zemrpc.zem.zem_rpc_device import ZemRpcDevice
 
 def ensure_sync_done(func):
     def wrapper(*args, **kwargs):
-        if not zem_api._init_sync:
-            zem_api._init_sync = True
+        if not zem_api._init_sync_done:
             zem_api.sync()
         return func(*args, **kwargs)
 
@@ -82,7 +81,7 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
         self.img_processor_mgr = ZemImageProcessorManager()
         self.img_processor_mgr.update(normalize_with_drop)
 
-        self._init_sync = False
+        self._init_sync_done = False
         if (nav_param := app_cfg.cfg_db.kv_db.get_obj("nav_param_calibed", NavParam)) is not None:
             logger.debug(f"load last nav_param_calibed: {nav_param}")
             self.m.nav_param_calibed = nav_param
@@ -96,13 +95,29 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
     @skip_sync_check
     def update_remote_addr(self, addr: Tuple[str, int], sync=True):
         self.device.update_remote_addr(addr)
-        self._init_sync = False
+        self._init_sync_done = False
         # TODO 如果支持RPC接口，一次性同步状态信息
         if sync:
             self.sync()
 
     @skip_sync_check
     def sync(self):
+        if self._init_sync_ing:
+            return
+
+        if self._init_sync_done:
+            return
+
+        try:
+            self._sync()
+        finally:
+            self._init_sync_ing = False
+            self._init_sync_done = False
+
+    def _sync(self):
+        self._init_sync_ing = True
+        self._init_sync_done = False
+
         self.device.ensure_connected()
 
         self.device.get_model()
@@ -110,18 +125,18 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
         if self.device.m.protocol_ng.is_available():
             logger.info(f"protocol_ng available: {self.device.m.protocol_ng}")
             resp = self.device.status_rpc()
-            logger.debug(f"status_rpc: {json_util.dumps(resp.model_dump(), indent=2)}")
+            logger.debug(f"status_rpc: \n{json_util.dumps(resp.model_dump(), indent=2)}")
 
         # TODO 支持RPC时切换到RPC接口同步状态信息
         self.device.get_hv()
         self.device.get_stage_pos()
         self.device.get_beam_size()
+
         self.sync_scan_field()
-
         self.get_nav_img()
-        logger.info(f"sync done: \n{json_util.dumps(self.device.m.model_dump(), indent=2)}")
 
-        self._init_sync = True
+        logger.info(f"sync done: \n{json_util.dumps(self.device.m.model_dump(), indent=2)}")
+        self._init_sync_done = True
 
     def send_cmd(self, cmd: EnumCmd, args: str = None):
         self.device.ensure_connected()
@@ -186,7 +201,7 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
         self.m.field_with_loc(self.device.m.scan_info, self.device.m.stage_pos)
 
     def set_hv(self, kv: float, wait: bool = False):
-        if not self._init_sync:
+        if not self._init_sync_done:
             raise ZemException.zem_api_not_ready("Zem API 未初始化，请先同步状态")
 
         kv = math_util.clamp(int(kv), 1, 30)
@@ -195,7 +210,7 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
             self.device.ensure_hv_ready()
 
     def set_gun(self, state: bool, wait: bool = False):
-        if not self._init_sync:
+        if not self._init_sync_done:
             raise ZemException.zem_api_not_ready("Zem API 未初始化，请先同步状态")
 
         if state:
@@ -261,7 +276,6 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
         logger.debug("use nav_param_calibed")
         return True
 
-    @ensure_sync_done
     def snap(self, **kwargs) -> ZemImage:
         """
         Capture a snapshot from the connected ZEM device and return it as a ZemImage.

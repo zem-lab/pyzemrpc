@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # tr!bf tribf@tribf.com
 
+import sys
 from loguru import logger
 
 from jgb.util import loguru_util
@@ -11,8 +12,9 @@ from zemrpc.zem.zem_api import zem_api
 
 
 def main():
-    addr = "192.168.31.140", 61557
+    addr = zem_api.device.socket.m.ip, 61557
     loguru_util.init_log(app_cfg.log_dir)
+    logger.add(sys.stderr, level="DEBUG", colorize=True, backtrace=True, diagnose=True)
 
     zem_api.handshake()
     zem_api.update_remote_addr(addr)

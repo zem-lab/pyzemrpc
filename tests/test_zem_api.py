@@ -54,7 +54,7 @@ class TestZemApiConnection:
         zem_api.sync()
 
         # 验证同步后的状态
-        assert zem_api._init_sync is True
+        assert zem_api._init_sync_done is True
         assert zem_api.device.m.stage_pos is not None
         assert zem_api.device.m.scan_info is not None
 
@@ -72,7 +72,7 @@ class TestZemApiHighVoltage:
         logger.info("Testing set_hv...")
 
         # 确保已同步
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         # 测试设置不同的高压值
@@ -88,7 +88,7 @@ class TestZemApiHighVoltage:
         """测试开启电子枪"""
         logger.info("Testing gun on...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         zem_api.set_gun(True, wait=True)
@@ -99,7 +99,7 @@ class TestZemApiHighVoltage:
         """测试关闭电子枪"""
         logger.info("Testing gun off...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         zem_api.set_gun(False, wait=True)
@@ -114,7 +114,7 @@ class TestZemApiMagnification:
         """测试设置放大倍率"""
         logger.info("Testing set_mag...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         # 测试不同的倍率
@@ -130,7 +130,7 @@ class TestZemApiMagnification:
         """测试设置物镜电流"""
         logger.info("Testing set_ob...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         # 测试设置物镜电流
@@ -148,7 +148,7 @@ class TestZemApiStageControl:
         """测试载物台移动到指定位置"""
         logger.info("Testing stage_xy_goto...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         # 记录初始位置
@@ -181,7 +181,7 @@ class TestZemApiStageControl:
         """测试闭环载物台移动"""
         logger.info("Testing stage_xy_goto_closed...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         target_pos = (300.0, 400.0)
@@ -196,7 +196,7 @@ class TestZemApiStageControl:
         """测试载物台相对移动"""
         logger.info("Testing stage_xy_rmove...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         # 先移动到一个已知位置
@@ -241,7 +241,7 @@ class TestZemApiImageCapture:
         """测试默认参数拍摄图像"""
         logger.info("Testing snap with default parameters...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         # 确保枪开启
@@ -261,7 +261,7 @@ class TestZemApiImageCapture:
         """测试不同尺寸的图像采集"""
         logger.info("Testing snap with different image sizes...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         zem_api.set_gun(True, wait=True)
@@ -287,7 +287,7 @@ class TestZemApiImageCapture:
         """测试带平均的图像采集"""
         logger.info("Testing snap with averaging...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         zem_api.set_gun(True, wait=True)
@@ -305,7 +305,7 @@ class TestZemApiImageCapture:
         """测试移动后采集图像"""
         logger.info("Testing move_then_cap...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         zem_api.set_gun(True, wait=True)
@@ -332,7 +332,7 @@ class TestZemApiNavigation:
         """测试获取导航图像"""
         logger.info("Testing get_nav_img...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         nav_img = zem_api.get_nav_img()
@@ -349,7 +349,7 @@ class TestZemApiNavigation:
         """测试同步扫描场"""
         logger.info("Testing sync_scan_field...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         zem_api.sync_scan_field()
@@ -362,7 +362,7 @@ class TestZemApiNavigation:
         """测试同步载物台和扫描场"""
         logger.info("Testing sync_stage_and_scan_field...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         zem_api.sync_stage_and_scan_field()
@@ -379,7 +379,7 @@ class TestZemApiAutofocus:
         """测试运行自动对焦"""
         logger.info("Testing run_autofocus...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         # 确保枪开启
@@ -396,7 +396,7 @@ class TestZemApiAutofocus:
         """测试移动后对焦"""
         logger.info("Testing mov_then_focus...")
 
-        if not zem_api._init_sync:
+        if not zem_api._init_sync_done:
             zem_api.sync()
 
         zem_api.set_gun(True, wait=True)
@@ -426,7 +426,7 @@ class TestZemApiIntegration:
         logger.info("Step 1: Handshake and sync")
         zem_api.handshake()
         zem_api.update_remote_addr(("127.0.0.1", 61557), sync=True)
-        assert zem_api._init_sync is True
+        assert zem_api._init_sync_done is True
         logger.success("✓ Connected and synchronized")
 
         # 2. 开启高压和电子枪
