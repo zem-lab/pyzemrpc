@@ -321,6 +321,12 @@ class EnumBeamSize(EnumWithCode):
         return cls.Unk
 
 
+class EnumCmdLevel(Enum):
+    """命令访问级别"""
+    BASIC = 0       # 基础命令，可以任意调用
+    ADVANCED = 1    # 高级命令，需要设置工作模式
+
+
 class ZemException(Exception):
     class Code(Enum):
         ConnTimeout = 10001
@@ -329,6 +335,7 @@ class ZemException(Exception):
         ApiNotReady = 10004
 
         UiOpError = 20001
+        PermissionDenied = 20002  # 命令权限被拒绝
 
     def __init__(self, msg, code):
         super().__init__(msg, code)
@@ -350,3 +357,7 @@ class ZemException(Exception):
     @classmethod
     def snap_ng_failed(cls, msg):
         return cls(msg, ZemException.Code.SvrError)
+
+    @classmethod
+    def permission_denied(cls, msg):
+        return cls(msg, ZemException.Code.PermissionDenied)

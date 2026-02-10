@@ -35,7 +35,7 @@ from jgb.conn.udp_socket import UdpSocket, UdpPacket
 from zemrpc import app_cfg
 from zemrpc.zem.context import ctx
 from zemrpc.zem.conn.img_receiver import ImgReceiver
-from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, MetaItem, NavParam, ScanInfo, SnapArgs, StagePos, ZemException, BseInfo
+from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, MetaItem, NavParam, ScanInfo, SnapArgs, StagePos, ZemException, BseInfo, EnumCmdLevel
 from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumHvStatus, EnumStageStatus, EnumVideoStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
 from zemrpc.zem.conn.rpc_protocol import JsonRpcBuilder, RespProtocolNg, RpcSnapResp, RpcStatusResp
 from zemrpc.zem import zem_util as zu
@@ -301,6 +301,9 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         self.builder = ProtocolBuilder()
         self.parser = ProtocolParser()
         self.rpc_builder = JsonRpcBuilder()
+
+        # Initialize work mode - default to BASIC level
+        self._work_mode = EnumCmdLevel.BASIC
 
     def update_remote_addr(self, addr: Tuple[str, int]):
         """
@@ -908,6 +911,43 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         self.m.compress_b = resp.parse_compress_b()
         return self.m.compress_b
 
+    def set_work_mode(self, mode: EnumCmdLevel):
+        """
+        设置设备工作模式
+
+        Args:
+            mode: 工作模式 (BASIC 或 ADVANCED)
+        """
+        self._work_mode = mode
+        logger.info(f"工作模式已切换为: {mode.name}")
+
+    def get_work_mode(self) -> EnumCmdLevel:
+        """
+        获取当前工作模式
+
+        Returns:
+            EnumCmdLevel: 当前工作模式
+        """
+        return self._work_mode
+
+    def _check_cmd_permission(self, cmd: EnumCmd):
+        """
+        检查命令权限
+
+        Args:
+            cmd: 要执行的命令
+
+        Raises:
+            ZemException: 如果命令被拒绝
+        """
+        if cmd.cmd_level == EnumCmdLevel.BASIC:
+            # 基础命令总是允许
+            return
+
+        if cmd.cmd_level == EnumCmdLevel.ADVANCED:
+            if self._work_mode != EnumCmdLevel.ADVANCED:
+                raise ZemException.permission_denied(f"命令 {cmd.name} ({cmd.name_cn}) 是高级命令，" f"需要先设置工作模式为 ADVANCED。当前模式: {self._work_mode.name}")
+
     def ensure_connected(self):
         """
         Verify device connection is established.
@@ -966,6 +1006,9 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         Raises:
             ZemException: If device returns an error response
         """
+        # Check command permission before sending
+        self._check_cmd_permission(req.cmd)
+
         # Choose appropriate PubSub handler based on request type
         if req.cmd == EnumCmd.Handshake:
             ps = HandshakePubSub(req, timeout=req.timeout_ms)
@@ -995,6 +1038,9 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         Returns:
             Response from appropriate PubSub handler
         """
+        # Check command permission before building request
+        self._check_cmd_permission(cmd)
+
         # Build request based on whether arguments are provided
         if args is None:
             req = self.builder.build_get(cmd)
