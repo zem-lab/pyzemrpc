@@ -280,7 +280,10 @@ class VirtualZem:
 
     @property
     def hv_info(self):
-        return self.acc_v, self.beam_i
+        if self.is_gun_open:
+            return self.acc_v, self.beam_i
+        else:
+            return 0, 0
 
     @abstractmethod
     def get_nav_img(self):
@@ -297,7 +300,7 @@ class VirtualZem:
             "Model": "Zem15C",
             "State": state,
             "Hv": {
-                "RealAccVol": 45.9114,
+                "RealAccVol": self.acc_v if self.is_gun_open else 0,
                 "EmissCur": 0.3128,
                 "FilaR": 0.0625,
                 "GridVol": 31999.5117,
@@ -1088,6 +1091,7 @@ class RemoteZem(threading.Thread):
             # 模拟高压开启过程
             time.sleep(0.1)
             self.zem_dev.hv_status = EnumHvStatus.Open
+            self.zem_dev.is_gun_open = True
         elif cmd == EnumCmd.SetHV_OFF:
             self.zem_dev.hv_status = EnumHvStatus.Changing
             self._send(packet.addr, self.builder.build_set_hv_off())

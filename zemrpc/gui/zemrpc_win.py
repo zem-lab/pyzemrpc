@@ -17,6 +17,7 @@ from zemrpc.gui import ui_utils
 from zemrpc.zem.models import StageMoveDirection
 from zemrpc.zem.zem_api import zem_api
 from zemrpc.zem.conn.protocol import EnumCmd, EnumVideoStatus
+from zemrpc.zem.models import EnumCmdLevel
 
 from .widgets.zem_img_viewer import ZemImgViewer
 from .widgets.nav_img_viewer import NavImgViewer
@@ -61,6 +62,7 @@ class ZemRpcWidget(QWidget):
         self.ui.btn_snap.clicked.connect(self._slot_btn_snap)
         self.ui.cbox_sem_servers.currentTextChanged.connect(self._slot_cbox_sem_servers_txt_changed)
         self.ui.btn_zem_sync.clicked.connect(self._slot_btn_zem_sync)
+        self.ui.cbox_work_mode.currentIndexChanged.connect(self._slot_cbox_work_mode_changed)
 
         # 高压
         self.ui.btn_hv_get.clicked.connect(zem_api.device.get_hv)
@@ -116,6 +118,7 @@ class ZemRpcWidget(QWidget):
         self._init_cbox_snap_args()
         self._init_cbox_mag()
         self._init_cbox_vzem()
+        self._init_cbox_work_mode()
 
         self.ui.slider_ob.setRange(0, 65535)
         self.ui.slider_ob.setMidValueLabel("32768")
@@ -153,6 +156,18 @@ class ZemRpcWidget(QWidget):
         with QSignalBlocker(cbox):
             for t in ["Mandelbrot", "Replay"]:
                 cbox.addItem(t)
+
+    def _init_cbox_work_mode(self):
+        cbox = self.ui.cbox_work_mode
+        with QSignalBlocker(cbox):
+            cbox.addItem("基础模式", EnumCmdLevel.BASIC)
+            cbox.addItem("高级模式", EnumCmdLevel.ADVANCED)
+        cbox.setCurrentIndex(0)
+
+    def _slot_cbox_work_mode_changed(self, index: int):
+        mode = self.ui.cbox_work_mode.currentData()
+        if mode is not None:
+            zem_api.device.set_work_mode(mode)
 
     def update_cbox_sem_servers(self, servers):
         records = {self.ui.cbox_sem_servers.itemText(i) for i in range(self.ui.cbox_sem_servers.count())}
@@ -271,9 +286,9 @@ class ZemRpcWidget(QWidget):
 
         def on_complete(success, result):
             if success:
-                ctx.trigger.transmit(qt_util.show_message_box_info, self, "开枪成功")
+                ctx.trigger.run(qt_util.show_message_box_info, self, "开枪成功")
             else:
-                ctx.trigger.transmit(qt_util.show_message_box_info, self, f"开枪失败: {result}")
+                ctx.trigger.run(qt_util.show_message_box_info, self, f"开枪失败: {result}")
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_gun_on, gun_task, on_complete))
 
@@ -287,9 +302,9 @@ class ZemRpcWidget(QWidget):
 
         def on_complete(success, result):
             if success:
-                ctx.trigger.transmit(qt_util.show_message_box_info, self, "关枪成功")
+                ctx.trigger.run(qt_util.show_message_box_info, self, "关枪成功")
             else:
-                ctx.trigger.transmit(qt_util.show_message_box_info, self, f"关枪失败: {result}")
+                ctx.trigger.run(qt_util.show_message_box_info, self, f"关枪失败: {result}")
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_gun_off, gun_off_task, on_complete))
 
@@ -331,9 +346,9 @@ class ZemRpcWidget(QWidget):
 
         def on_complete(success, result):
             if success:
-                ctx.trigger.transmit(qt_util.show_message_box_info, self, "虚拟ZEM启动成功")
+                ctx.trigger.run(qt_util.show_message_box_info, self, "虚拟ZEM启动成功")
             else:
-                ctx.trigger.transmit(qt_util.show_message_box_info, self, f"虚拟ZEM启动失败: {result}")
+                ctx.trigger.run(qt_util.show_message_box_info, self, f"虚拟ZEM启动失败: {result}")
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_vzem_start, vzem_start_task, on_complete))
 

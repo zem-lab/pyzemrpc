@@ -123,6 +123,16 @@
            </widget>
           </item>
           <item>
+           <widget class="QLabel" name="lbl_work_mode">
+            <property name="text">
+             <string>工作模式:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="cbox_work_mode"/>
+          </item>
+          <item>
            <spacer name="horizontalSpacer_5">
             <property name="orientation">
              <enum>Qt::Orientation::Horizontal</enum>
@@ -952,7 +962,7 @@
           <item>
            <widget class="QLabel" name="label_2">
             <property name="text">
-             <string>μm   </string>
+             <string>μm </string>
             </property>
            </widget>
           </item>
