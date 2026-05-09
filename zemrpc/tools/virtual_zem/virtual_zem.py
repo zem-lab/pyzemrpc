@@ -16,7 +16,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from functools import cached_property
 
-from jgb.util import os_util, cv_util, file_util, json_util
+from jgb.util import cv_util, file_util, json_util
 
 from zemrpc import app_cfg
 from zemrpc.zem.conn.protocol import (
@@ -170,6 +170,8 @@ class ImageSender(threading.Thread):
         super().__init__()
         self.daemon = True
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        from zemrpc.zem import ip_util
+        self.listen_host = ip_util.get_real_local_ip()
         self._imgs = {}
         self._interrupted = False
 
@@ -181,7 +183,7 @@ class ImageSender(threading.Thread):
         self._imgs = img
 
     def run(self):
-        self.server.bind(("0.0.0.0", 0))
+        self.server.bind((self.listen_host, 0))
         self.server.listen(1)
 
         while not self._interrupted:
@@ -198,17 +200,17 @@ class UdpService(threading.Thread):
         super().__init__()
 
         self.server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # ip = os_util.get_default_ip()
 
-        # 处理 clash 虚拟网卡(198.18.0.1)  导致获取到虚拟网卡ip  导致无法通信
+        # Listen on all interfaces, but advertise a concrete reachable IP
+        # in the handshake payload.
         from zemrpc.zem import ip_util
 
         ip = ip_util.get_real_local_ip()
 
         port = 61557
 
-        # Bind the socket to the port
-        self.server_address = ("0.0.0.0", port)
+        self.listen_address = ("0.0.0.0", port)
+        self.server_address = (ip, port)
         self.daemon = True
 
         self.data_received_callback = None
@@ -229,8 +231,8 @@ class UdpService(threading.Thread):
 
     def run(self):
         self.server.settimeout(0.1)
-        logger.debug("starting up on %s port %s" % self.server_address)
-        self.server.bind(self.server_address)
+        logger.debug("starting up on %s port %s" % self.listen_address)
+        self.server.bind(self.listen_address)
 
         while not self._interrupted:
             try:

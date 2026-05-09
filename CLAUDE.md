@@ -87,7 +87,8 @@ For testing, start the virtual ZEM server:
 python -m zemrpc.tools.virtual_zem.main
 ```
 
-The virtual ZEM udp port is `61557` and json rpc server listens on `61600` by default.
+The virtual ZEM UDP port is `61557` and JSON-RPC server listens on `61600` by default.
+The UDP service binds to `0.0.0.0:61557`, while handshake and image download responses advertise a concrete reachable local IP.
 
 ## High-Level Architecture
 

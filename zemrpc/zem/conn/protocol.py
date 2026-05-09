@@ -6,6 +6,7 @@ import re
 import json
 import base64
 import collections
+import ipaddress
 
 from typing import Tuple
 from loguru import logger
@@ -705,12 +706,24 @@ class RespPacket(BaseResponse):
     def parse_img_resp(self) -> ImageResp:
         try:
             req, svr_name, ip, port, depth, width, height, crc = self._re_img.findall(self.data_str)[0]
-            if "addr" in self.extra:
+            if "addr" in self.extra and self._should_replace_image_ip(ip):
                 ip = self.extra["addr"][0]
             return ImageResp(req, svr_name, ip, int(port), int(depth), int(width), int(height))
         except Exception:
             logger.error(f"解析ImageResp失败: {self.data_str}")
             return None
+
+    @staticmethod
+    def _should_replace_image_ip(ip: str) -> bool:
+        try:
+            ip_obj = ipaddress.ip_address(ip)
+        except ValueError:
+            return True
+        if ip == "0.0.0.0":
+            return True
+        if ip_obj.is_loopback:
+            return True
+        return ip_obj in ipaddress.ip_network("198.18.0.0/15")
 
     def parse_nav_para(self) -> NavParam:
         p0x, p0y, cx, cy, crc = self._re_nav_para.findall(self.data_str)[0]
