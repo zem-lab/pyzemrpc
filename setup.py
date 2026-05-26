@@ -62,6 +62,12 @@ setup_args = dict(
     },
     data_files=data_files,
     install_requires=install_requires,
+    extras_require={
+        "rust": [
+            "mandelbrot_zem_rs>=0.1.0",
+            "perlin_zem_rs>=0.1.0",
+        ],
+    },
 
     command_options={
         "nuitka": {

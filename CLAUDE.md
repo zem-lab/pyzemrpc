@@ -24,8 +24,14 @@ pip install -e .
 ### Build
 
 ```bash
-# Build wheel (updates git info, converts UI files to Python, cleans build dir)
+# Build pure Python wheel (updates git info, converts UI files to Python, cleans build dir)
 inv build
+
+# Build Rust accelerator wheels (mandelbrot_zem_rs, perlin_zem_rs) for current platform
+inv build_rust
+
+# Build all packages (main + both Rust wheels)
+inv build_all
 
 # Build with docs
 inv build --docs
@@ -36,6 +42,9 @@ inv git_info
 # Convert .ui Qt Designer files to Python
 inv ui2py
 ```
+
+**Rust accelerator packages** are built with `maturin` and require a Rust toolchain. They produce platform-specific wheels (e.g., `cp312-win_amd64`). When not installed, the virtual ZEM falls back to pure Python/NumPy implementations automatically.
+
 
 ### Testing
 
@@ -107,9 +116,10 @@ The virtual ZEM UDP port is `61557` and the JSON-RPC server port is auto-selecte
    - `widgets/`: Custom Qt widgets (image viewers, etc.)
 
 3. **zemrpc/tools/virtual_zem/** - Virtual SEM Emulator
-   - `virtual_zem.py`: Simulates SEM hardware for testing
+   - `virtual_zem.py`: Simulates SEM hardware for testing. Two engines: `MandelbrotZem` (fractal-based) and `PerlinZem` (noise-based). Both prefer Rust acceleration and fall back to Python/NumPy automatically.
    - `jsonrpc_server.py`: FastAPI server with JSON-RPC endpoints for the virtual ZEM
-   - Uses Rust-based sub-modules (`mandelbrot_zem_rs`, `perlin_zem_rs`) for image generation
+   - `mandelbrot_zem_rs/`: Rust-accelerated Mandelbrot fractal generator (optional, `pip install pyzemrpc[rust]`)
+   - `perlin_zem_rs/`: Rust-accelerated Perlin noise generator (optional, `pip install pyzemrpc[rust]`)
 
 4. **Configuration & Logging**
    - `__init__.py`: `AppConfig` class manages YAML config files and database-backed configuration via `CfgDb`

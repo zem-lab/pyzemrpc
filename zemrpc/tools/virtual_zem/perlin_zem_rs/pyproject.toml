@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "perlin_zem_rs"
 version = "0.1.0"
 description = "High-performance Perlin noise generator for virtual SEM images"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",

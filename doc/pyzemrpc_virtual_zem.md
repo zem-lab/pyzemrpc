@@ -6,7 +6,12 @@
 
 `pyzemrpc_virtual_zem`是pyzemrpc包的虚拟ZEM服务器，用于在不连接真实SEM硬件的情况下进行测试和开发。它模拟了ZEPTOOLS扫描电子显微镜的行为，并提供JSON-RPC接口供客户端调用。
 
-该工具使用FastAPI构建JSON-RPC服务器，并利用Rust编写的子模块(`mandelbrot_zem_rs`, `perlin_zem_rs`)生成模拟的SEM图像。
+该工具使用FastAPI构建JSON-RPC服务器。支持两种图像生成引擎：
+
+- **MandelbrotZem**: 基于 Mandelbrot 分形生成类似 SEM 的图像
+- **PerlinZem**: 基于柏林噪声 + Worley噪声 + Ridge噪声组合生成更真实纹理
+
+两种引擎均优先使用 Rust 实现（`mandelbrot_zem_rs`, `perlin_zem_rs`）以获得 10-50 倍性能提升。如 Rust 模块未安装，自动回退到纯 Python/NumPy 实现，功能完全一致。
 
 ## 使用方法
 

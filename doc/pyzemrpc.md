@@ -21,6 +21,16 @@ pyzemrpc 是一个Python远程控制接口，用于ZEPTOOLS扫描电子显微镜
 
 ## 安装和部署
 
+### 用户安装
+
+```bash
+# 基础安装（纯 Python，无需 Rust 工具链）
+pip install pyzemrpc
+
+# 带 Rust 加速（可选，虚拟电镜图像生成快 10-50 倍）
+pip install pyzemrpc[rust]
+```
+
 ### 环境设置
 
 ```bash
@@ -37,18 +47,28 @@ pip install -e .
 ### 构建
 
 ```bash
-# 构建wheel包（更新git信息，转换UI文件到Python，清理构建目录）
+# 构建主包 wheel（纯 Python）
 inv build
+
+# 构建 Rust 加速包 wheel（平台相关）
+inv build_rust
+
+# 一键构建所有三个包
+inv build_all
 
 # 构建带文档
 inv build --docs
 
-# 仅更新git信息
-inv git_info
-
-# 将.ui Qt Designer文件转换为Python
-inv ui2py
+# 辅助任务
+inv git_info   # 将 git commit hash 写入 zemrpc/__commit__.py
+inv ui2py      # 将 .ui Qt Designer 文件转换为 Python
 ```
+
+Rust 加速包（`mandelbrot_zem_rs`、`perlin_zem_rs`）需安装 `maturin` 和 Rust 工具链。如未安装 Rust 环境，可跳过 `inv build_rust`，仅构建纯 Python 主包。
+
+### 发布
+
+- [PyPI/Twine 发布指南](twine_release.md) — 包含三包构建、上传和 CI 自动化说明
 
 ### 测试
 

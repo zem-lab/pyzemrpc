@@ -60,3 +60,23 @@ def build(c, docs=False):
     file_util.write_text_lines(PROJ_HOME / "build/build.log", [r.stdout])
     if docs:
         c.run("sphinx-build docs docs/_build")
+
+
+@task
+def build_rust(c):
+    """构建 mandelbrot_zem_rs 和 perlin_zem_rs 的 wheel"""
+    rust_pkgs = [
+        "zemrpc/tools/virtual_zem/mandelbrot_zem_rs",
+        "zemrpc/tools/virtual_zem/perlin_zem_rs",
+    ]
+    for pkg in rust_pkgs:
+        pkg_path = PROJ_HOME / pkg
+        print(f"\n=== 构建 {pkg} ===")
+        c.run(f"maturin build --release --manifest-path {pkg_path / 'Cargo.toml'}")
+
+
+@task(pre=[build, build_rust])
+def build_all(c, docs=False):
+    """构建 pyzemrpc 纯 Python wheel + 两个 Rust 加速包 wheel"""
+    print("\n=== 所有 wheel 构建完成 ===")
+    print("wheel 文件位于各自目录的 target/wheels/ 下")

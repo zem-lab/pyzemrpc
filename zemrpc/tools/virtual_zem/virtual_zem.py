@@ -392,10 +392,15 @@ class MandelbrotZem(VirtualZem):
         super().__init__()
         self.nm = NavMandelbrot()
         self.model = "VirtualZem/MandelbrotZem"
+        if _USE_RUST_MANDELBROT:
+            self._rust_generator = MandelbrotGenerator(max_iter=100)
 
     @cached_property
     def nav_nm_img(self):
-        img = mandelbrot(self.nm.xmin, self.nm.xmax, self.nm.ymin, self.nm.ymax, self.nm.width, self.nm.height)
+        if _USE_RUST_MANDELBROT:
+            img = mandelbrot_rs(self.nm.xmin, self.nm.xmax, self.nm.ymin, self.nm.ymax, self.nm.width, self.nm.height)
+        else:
+            img = mandelbrot(self.nm.xmin, self.nm.xmax, self.nm.ymin, self.nm.ymax, self.nm.width, self.nm.height)
         img = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8UC1)
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
         return img
@@ -427,7 +432,10 @@ class MandelbrotZem(VirtualZem):
         r = (self.nav_para.cx * self.nm.width) / (self.nm.xmax - self.nm.xmin)
         xmin, xmax, ymin, ymax = list(map(lambda v: v / r, [xmin, xmax, ymin, ymax]))
 
-        img = mandelbrot(xmin, xmax, ymin, ymax, width, height)
+        if _USE_RUST_MANDELBROT:
+            img = mandelbrot_rs(xmin, xmax, ymin, ymax, width, height)
+        else:
+            img = mandelbrot(xmin, xmax, ymin, ymax, width, height)
         img = cv2.flip(img, 0)
         if self.img_dtype == np.uint16:
             img = (img * 65535 / 100).astype(np.uint16)
@@ -447,6 +455,18 @@ try:
 except ImportError:
     _USE_RUST_PERLIN = False
     logger.warning("Rust 模块 perlin_zem_rs 未安装，使用 Python 实现（性能较低）")
+
+# 尝试导入 Rust 实现的 Mandelbrot 分形生成器
+try:
+    from mandelbrot_zem_rs import MandelbrotGenerator, mandelbrot as mandelbrot_rs
+
+    _USE_RUST_MANDELBROT = True
+    logger.info("使用 Rust 实现的 MandelbrotZem (高性能)")
+except ImportError:
+    _USE_RUST_MANDELBROT = False
+    MandelbrotGenerator = None
+    mandelbrot_rs = None
+    logger.warning("Rust 模块 mandelbrot_zem_rs 未安装，使用 Python 实现（性能较低）")
 
 
 class PerlinZem(VirtualZem):
