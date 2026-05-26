@@ -70,7 +70,7 @@ python tests/test_zem_api.py
 python -m zemrpc.tools.virtual_zem.main
 ```
 
-默认UDP端口是 `61557`，JSON-RPC服务器监听在 `61600`。
+默认UDP端口是 `61557`，JSON-RPC服务器端口自动选择（`--port 0`）。
 
 ## 架构概述
 

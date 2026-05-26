@@ -22,23 +22,25 @@ pyzemrpc_virtual_zem
 pyzemrpc_virtual_zem --port 61600 --host 0.0.0.0
 ```
 
+默认端口为 0（自动选择空闲端口），也可用 `--port` 指定。
+
 ### 使用短参数
 
 ```bash
-pyzemrpc_virtual_zem -p 61600
+pyzemrpc_virtual_zem -p 0
 ```
 
 ## 命令行参数
 
 | 参数 | 短参数 | 类型 | 默认值 | 描述 |
 |------|--------|------|--------|------|
-| `--port` | `-p` | int | 61600 | JSON-RPC服务器监听端口 |
+| `--port` | `-p` | int | 0 | JSON-RPC服务器监听端口 (0=自动选择) |
 | `--host` | 无 | str | 0.0.0.0 | 服务器绑定地址 |
 
 ## 默认配置
 
 - **UDP端口**: 61557 (虚拟ZEM的UDP通信端口)
-- **JSON-RPC端口**: 61600
+- **JSON-RPC端口**: 自动选择（启动时打印具体端口号）
 - **随机种子**: 3366 (用于生成可重复的测试图像)
 
 ## 使用场景

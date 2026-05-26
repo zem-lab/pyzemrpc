@@ -14,6 +14,12 @@ from jgb.util import py_util, file_util
 from zemrpc import app_cfg
 
 
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
 class VZemMgr:
     def __init__(self):
         self._vzem_proc = None
@@ -28,7 +34,13 @@ class VZemMgr:
           其它: 传入.py脚本路径
         """
         host = "127.0.0.1"
-        port = 61600
+
+        # 进程对象还活着
+        if self._vzem_proc and self._vzem_proc.poll() is None:
+            logger.info("virtual ZEM 进程已启动")
+            return True
+
+        port = _find_free_port()
 
         def port_open():
             try:
@@ -37,24 +49,14 @@ class VZemMgr:
             except OSError:
                 return False
 
-        # 已有实例在监听
-        if port_open():
-            logger.info(f"virtual ZEM 已在运行 {host}:{port}")
-            return True
-
-        # 进程对象还活着
-        if self._vzem_proc and self._vzem_proc.poll() is None:
-            logger.info("virtual ZEM 进程已启动")
-            return True
-
         from zemrpc.tools.virtual_zem import main as m
 
         py = file_util.resolve_filepath(py_util.get_script_path(m))
 
         if py.exists():
-            cmd = [sys.executable, str(py)]
+            cmd = [sys.executable, str(py), "--port", str(port)]
         else:
-            cmd = [sys.executable, "-m", "zemrpc.tools.virtual_zem.main"]
+            cmd = [sys.executable, "-m", "zemrpc.tools.virtual_zem.main", "--port", str(port)]
 
         try:
             logger.info(f"启动 virtual ZEM: {' '.join(cmd)}")

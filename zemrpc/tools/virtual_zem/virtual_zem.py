@@ -159,7 +159,7 @@ class JsonRpcServer:
             return self.rpc_builder.build_resp(packet.parse_cmd(), self.build_with_result(req, {"error": "UDP通道不支持该命令, 请调用JsonRPC服务"}))
 
     def get_protocol_ng(self):
-        return {"name": self.zem.zem_dev.protocol_ng, "url": "http://127.0.0.1:61600/api/v1/jsonrpc"}
+        return {"name": self.zem.zem_dev.protocol_ng, "url": f"http://127.0.0.1:{self.zem.zem_dev.jsonrpc_port}/api/v1/jsonrpc"}
 
     def build_with_result(self, req, result):
         return {"jsonrpc": "2.0", "id": req["id"], "result": result}
@@ -268,6 +268,7 @@ class VirtualZem:
         self.is_gun_open = False  # 枪头是否打开
         self.model = "VirtualZem"
         self.protocol_ng = "ZEMRPC-202409"
+        self.jsonrpc_port = 0
 
     @property
     def scan_um(self):
