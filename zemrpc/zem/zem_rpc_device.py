@@ -19,6 +19,7 @@ Classes:
 import cv2
 import json
 import time
+import socket
 import numpy as np
 import threading
 from loguru import logger
@@ -329,11 +330,84 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         """
         Perform handshake with devices on the network.
 
+        Broadcast on ALL local network interfaces to discover ZEM devices,
+        regardless of which subnet they are connected to.
+
+        On Windows, a UDP socket bound to a specific IP only broadcasts on
+        that IP's network interface. To reach devices on multiple subnets
+        (e.g. wired + WiFi), we create a temporary socket per interface,
+        broadcast from each, and merge the results.
+
         Returns:
-            List: List of discovered device addresses
+            List[Tuple[str, int]]: List of discovered device addresses (ip, port)
         """
-        resp = self.send(self.build_handshake_request())  # type: List[RespPacket]
-        return [packet.parse_ip_port() for packet in resp if not packet.is_error()]
+        # Collect all local private IPs (wired + WiFi + ...)
+        all_ips = ip_util._get_all_local_ips()
+        local_ips = []
+        for ip in all_ips:
+            if ip_util._is_loopback_ip(ip) or ip_util._is_clash_fake_ip(ip):
+                continue
+            if ip_util._is_private_ip(ip):
+                local_ips.append(ip)
+
+        if not local_ips:
+            # Fallback: use the existing single-IP socket approach
+            resp = self.send(self.build_handshake_request())
+            return [packet.parse_ip_port() for packet in resp if not packet.is_error()]
+
+        # Broadcast on each interface
+        all_packets = []
+        deadline = time.time() + (EnumCmd.Handshake.timeout / 1000)
+
+        for ip in local_ips:
+            sock = None
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                sock.settimeout(0.3)
+                sock.bind((ip, 0))
+
+                local_ip, local_port = sock.getsockname()
+                self.builder.ip, self.builder.port = local_ip, local_port
+                req = self.builder.build_handshake_request()
+
+                sock.sendto(req.data, ("<broadcast>", self.m.addr[1]))
+                logger.debug(f"Handshake broadcast on {ip} ({local_ip}:{local_port})")
+
+                # Collect responses from this interface
+                while time.time() < deadline:
+                    try:
+                        remaining = deadline - time.time()
+                        if remaining <= 0:
+                            break
+                        sock.settimeout(min(remaining, 0.3))
+                        data, addr = sock.recvfrom(4096)
+                        for packet_data in self.parser.append(addr, data):
+                            resp = RespPacket(packet_data)
+                            resp.extra["addr"] = addr
+                            if resp.cmd == EnumCmd.HandshakeResp and not resp.is_error():
+                                all_packets.append(resp)
+                    except socket.timeout:
+                        break
+                    except Exception:
+                        break
+            except Exception as e:
+                logger.debug(f"Handshake on {ip} failed: {e}")
+            finally:
+                if sock:
+                    sock.close()
+
+        # Deduplicate by (ip, port)
+        seen = set()
+        unique = []
+        for pkt in all_packets:
+            ipport = pkt.parse_ip_port()
+            if ipport not in seen:
+                seen.add(ipport)
+                unique.append(pkt)
+
+        logger.info(f"Handshake found {len(unique)} device(s) on {len(local_ips)} interface(s)")
+        return [packet.parse_ip_port() for packet in unique]
 
     def video_play_on(self):
         """
