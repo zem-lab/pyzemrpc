@@ -161,3 +161,5 @@ tmp/
 zemrpc/__commit__.py
 node_modules/
 *.lock
+
+zemrpc/gui/zemrpc_win_ui.py

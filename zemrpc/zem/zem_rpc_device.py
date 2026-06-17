@@ -37,7 +37,7 @@ from zemrpc import app_cfg
 from zemrpc.zem.context import ctx
 from zemrpc.zem.conn.img_receiver import ImgReceiver
 from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, MetaItem, NavParam, ScanInfo, SnapArgs, StagePos, ZemException, BseInfo, EnumCmdLevel
-from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumHvStatus, EnumStageStatus, EnumVideoStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket
+from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumHvStatus, EnumStageStatus, EnumVideoStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket, patch_request_callback
 from zemrpc.zem.conn.rpc_protocol import JsonRpcBuilder, RespProtocolNg, RpcSnapResp, RpcStatusResp
 from zemrpc.zem import zem_util as zu
 from zemrpc.zem import ip_util
@@ -306,6 +306,69 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         # Initialize work mode - default to BASIC level
         self._work_mode = EnumCmdLevel.BASIC
 
+        # device addr -> local IP that successfully reached it during handshake
+        self._iface_by_device: dict[Tuple[str, int], str] = {}
+
+    def _resolve_local_ip_for_device(self, addr: Tuple[str, int]) -> str:
+        if local_ip := self._iface_by_device.get(addr):
+            logger.debug(f"Use handshake interface {local_ip} for device {addr[0]}:{addr[1]}")
+            return local_ip
+        # Subnet match only; do not use UDP connect() route probe — on multi-homed
+        # Windows it may pick the default-route NIC (e.g. wired) while the device
+        # replies on another interface (e.g. WiFi).
+        return ip_util.get_real_local_ip(target_ip=addr[0])
+
+    def _ensure_socket_bind(self, local_ip: str):
+        """
+        Bind the persistent UDP socket to local_ip.
+
+        Must set m.ip BEFORE the first sock access; otherwise jgb lazy-init binds
+        the wrong interface.
+        """
+        if self.socket._socket is None:
+            self.socket.m.ip = local_ip
+            self.socket.m.port = 0
+            self.socket.init_socket()
+            self.parser.buffer.clear()
+            self.builder.ip, self.builder.port = self.socket.sock.getsockname()
+            logger.debug(f"UDP socket opened on {self.builder.ip}:{self.builder.port}")
+            return
+
+        current_ip, _ = self.socket.sock.getsockname()
+        if current_ip == local_ip:
+            self.builder.ip, self.builder.port = self.socket.sock.getsockname()
+            return
+
+        logger.info(f"Rebind UDP socket from {current_ip} to {local_ip}")
+        self.socket.rcv_worker.stop()
+
+        # jgb SingleWorker.start() is a no-op when thread is not None, even
+        # if the thread is dead.  Clear it so init_socket() can restart.
+        self.socket.rcv_worker.thread = None
+        self.socket.rcv_worker.exit_evt.clear()
+
+        with self.socket.mutex:
+            if self.socket._socket is not None:
+                try:
+                    self.socket._socket.close()
+                except OSError:
+                    pass
+                self.socket._socket = None
+
+        self.socket.m.ip = local_ip
+        self.socket.m.port = 0
+        self.socket.init_socket()
+        self.parser.buffer.clear()
+        self.builder.ip, self.builder.port = self.socket.sock.getsockname()
+
+    def _prepare_comm(self):
+        """Ensure socket and builder use the interface that can reach the selected device."""
+        if self.m.addr[0] == "UNK":
+            return
+        local_ip = self._resolve_local_ip_for_device(self.m.addr)
+        self._ensure_socket_bind(local_ip)
+        self.builder.ip, self.builder.port = self.socket.sock.getsockname()
+
     def update_remote_addr(self, addr: Tuple[str, int]):
         """
         Update the remote device address.
@@ -314,7 +377,8 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
             addr (Tuple[str, int]): New device address (IP, port)
         """
         self.m.addr = addr
-        self.builder.ip, self.builder.port = self.socket.sock.getsockname()
+        self._prepare_comm()
+        logger.debug(f"Remote device {addr[0]}:{addr[1]} via local {self.builder.ip}:{self.builder.port}")
 
     def build_handshake_request(self):
         """
@@ -385,6 +449,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
                         for packet_data in self.parser.append(addr, data):
                             resp = RespPacket(packet_data)
                             resp.extra["addr"] = addr
+                            resp.extra["local_ip"] = local_ip
                             if resp.cmd == EnumCmd.HandshakeResp and not resp.is_error():
                                 all_packets.append(resp)
                     except socket.timeout:
@@ -405,6 +470,8 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
             if ipport not in seen:
                 seen.add(ipport)
                 unique.append(pkt)
+                if local_ip := pkt.extra.get("local_ip"):
+                    self._iface_by_device[ipport] = local_ip
 
         logger.info(f"Handshake found {len(unique)} device(s) on {len(local_ips)} interface(s)")
         return [packet.parse_ip_port() for packet in unique]
@@ -1121,16 +1188,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         else:
             req = self.builder.build_set(cmd, args)
 
-        # Choose appropriate PubSub handler
-        if req.cmd == EnumCmd.Handshake:
-            ps = HandshakePubSub(req)
-        elif req.cmd == EnumCmd.GetNavImg:
-            ps = GetImagePubSub(req, self.m.is_newbee())
-        elif req.cmd == EnumCmd.Snap:
-            ps = GetImagePubSub(req, self.m.is_newbee())
-        else:
-            ps = PubSub(req)
-        return self.rws.pubsub_send(ps)
+        return self.pubsub_send(req)
 
     def _do_framing(self, pkt: UdpPacket):
         """
@@ -1158,12 +1216,19 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         Args:
             req (Request): Request to be sent
         """
-        _c = req.data.decode()
+        if req.cmd != EnumCmd.Handshake:
+            self._prepare_comm()
+            local_ip, local_port = self.socket.sock.getsockname()
+            data = patch_request_callback(req.data, local_ip, local_port)
+        else:
+            data = req.data
+
+        _c = data.decode()
         logger.debug(f"send to {self.m.addr}: {_c}")
         self.m.cmd_send(_c)
         if req.cmd == EnumCmd.Handshake:
             # Broadcast handshake requests for device discovery
-            self.socket.broadcast(req.data, self.m.addr[1])
+            self.socket.broadcast(data, self.m.addr[1])
         else:
             # Send regular requests to specific device address
-            self.socket.write(req.data, addr=self.m.addr)
+            self.socket.write(data, addr=self.m.addr)

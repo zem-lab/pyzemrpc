@@ -70,6 +70,101 @@ def _is_loopback_ip(ip: str) -> bool:
         return False
 
 
+def _get_interface_subnets() -> List[tuple[str, str]]:
+    """
+    Get (local_ip, netmask) pairs from network interfaces.
+
+    Returns:
+        List of (ip, netmask) tuples for non-loopback, non-fake IPv4 addresses
+    """
+    subnets: List[tuple[str, str]] = []
+    try:
+        import netifaces
+
+        for interface in netifaces.interfaces():
+            addrs = netifaces.ifaddresses(interface)
+            if netifaces.AF_INET not in addrs:
+                continue
+            for addr_info in addrs[netifaces.AF_INET]:
+                ip = addr_info.get("addr")
+                netmask = addr_info.get("netmask")
+                if not ip or not netmask:
+                    continue
+                if _is_loopback_ip(ip) or _is_clash_fake_ip(ip):
+                    continue
+                subnets.append((ip, netmask))
+    except ImportError:
+        logger.debug("netifaces not available for subnet lookup")
+    except Exception as e:
+        logger.debug(f"Failed to get interface subnets: {e}")
+    return subnets
+
+
+def _ip_in_same_subnet(ip: str, target_ip: str, netmask: str) -> bool:
+    try:
+        ip_int = int(ipaddress.ip_address(ip))
+        target_int = int(ipaddress.ip_address(target_ip))
+        mask_int = int(ipaddress.ip_address(netmask))
+        return (ip_int & mask_int) == (target_int & mask_int)
+    except ValueError:
+        return False
+
+
+def get_route_local_ip(target_ip: str, target_port: int = 61557, candidates: Optional[List[str]] = None) -> Optional[str]:
+    """
+    Pick the local IP the OS would use to reach target_ip by probing UDP connect().
+    """
+    if candidates is None:
+        candidates = [
+            ip
+            for ip in _get_all_local_ips()
+            if not _is_clash_fake_ip(ip) and not _is_loopback_ip(ip)
+        ]
+    for ip in candidates:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.bind((ip, 0))
+                s.connect((target_ip, target_port))
+                logger.debug(f"Route to {target_ip}:{target_port} via local {ip}")
+                return ip
+        except OSError:
+            continue
+    return None
+
+
+def _find_local_ip_for_target(target_ip: str, candidates: List[str]) -> Optional[str]:
+    """
+    Pick the local IP that can reach target_ip on the same L2/L3 subnet.
+
+    Uses interface netmasks when available, otherwise tries common prefix lengths.
+    """
+    for ip, netmask in _get_interface_subnets():
+        if ip in candidates and _ip_in_same_subnet(ip, target_ip, netmask):
+            logger.debug(f"Selected IP {ip} (same subnet as {target_ip}, mask {netmask})")
+            return ip
+
+    try:
+        target = ipaddress.ip_address(target_ip)
+    except ValueError:
+        return None
+
+    for prefix_len in (32, 24, 22, 16):
+        try:
+            net = ipaddress.ip_network(f"{target_ip}/{prefix_len}", strict=False)
+        except ValueError:
+            continue
+        if target not in net:
+            continue
+        for ip in candidates:
+            try:
+                if ipaddress.ip_address(ip) in net:
+                    logger.debug(f"Selected IP {ip} (prefix /{prefix_len} with {target_ip})")
+                    return ip
+            except ValueError:
+                continue
+    return None
+
+
 def _get_all_local_ips() -> List[str]:
     """
     Get all local IP addresses from network interfaces.
@@ -158,20 +253,12 @@ def get_real_local_ip(target_ip: Optional[str] = None) -> str:
         logger.warning("All IPs were filtered out, falling back to os_util.get_default_ip()")
         return os_util.get_default_ip()
     
-    # If target IP is provided, prioritize IPs in the same subnet
+    # If target IP is provided, prioritize IPs on the same subnet/interface
     if target_ip:
-        try:
-            target_net = ipaddress.ip_network(f"{target_ip}/24", strict=False)
-            for ip in real_ips:
-                try:
-                    ip_obj = ipaddress.ip_address(ip)
-                    if ip_obj in target_net:
-                        logger.debug(f"Selected IP {ip} (same subnet as {target_ip})")
-                        return ip
-                except ValueError:
-                    continue
-        except Exception as e:
-            logger.debug(f"Failed to match subnet for {target_ip}: {e}")
+        if matched := _find_local_ip_for_target(target_ip, real_ips):
+            return matched
+        if matched := get_route_local_ip(target_ip, candidates=real_ips):
+            return matched
     
     # Prioritize private IPs
     private_ips = [ip for ip in real_ips if _is_private_ip(ip)]

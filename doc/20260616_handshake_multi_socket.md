@@ -122,7 +122,24 @@ def handshake(self):
 修改后: Handshake found 21 device(s) on 2 interface(s) (21 设备, 两个网卡均广播)
 ```
 
-## 相关文件
+## 后续通信（1.2.4 修复）
+
+Handshake 修复后，持久 UDP socket 仍绑定在 `get_real_local_ip()` 返回的**第一个**私有 IP 上。
+选择远程设备后若目标在另一子网，命令里嵌入的回调地址（`builder.ip:port`）与发包网卡不一致，
+设备回包无法到达，表现为 `GetModel命令超时`。
+
+### 修复
+
+1. **`update_remote_addr`**：根据目标设备 IP 将持久 socket **重绑定**到同子网本地 IP。
+2. **`get_real_local_ip(target_ip)`**：使用网卡真实 netmask 匹配子网；无 netifaces 时回退 `/32`→`/24`→`/22`→`/16`。
+
+典型日志（修复前）：
+
+```
+send to ('192.168.111.207', 61557): $GetModel:,192.168.1.34:62102,...
+```
+
+目标在 `192.168.111.x`（/22），但命令嵌入 `192.168.1.34`（另一网卡），导致超时。
 
 - `zemrpc/zem/zem_rpc_device.py` — `handshake()` 方法实现
 - `zemrpc/zem/ip_util.py` — IP 获取与过滤工具

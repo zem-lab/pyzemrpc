@@ -104,6 +104,30 @@ def append_crc(data):
     return data
 
 
+def patch_request_callback(data: bytes, ip: str, port: int) -> bytes:
+    """
+    Replace the embedded client callback ip:port in a framed request and recompute CRC.
+
+    Request layout: $Cmd[:args],ip:port,CRC%
+    """
+    try:
+        text = data.decode()
+    except UnicodeDecodeError:
+        return data
+    if len(text) < 5 or not text.endswith("%"):
+        return data
+
+    payload = text[:-5]
+    if payload.endswith(","):
+        payload = payload[:-1]
+    idx = payload.rfind(",")
+    if idx < 0:
+        return data
+
+    message = f"{payload[:idx + 1]}{ip}:{port},"
+    return append_crc(message)
+
+
 class EnumErrorCode(EnumWithCode):
     NO_ERROR = 0, "无错误"
     ILLEGAL_PARAMETER = 1, "非法参数"
@@ -119,7 +143,7 @@ class EnumCmd(Enum):
     InvalidCmd        = "InvalidCmd",                   False, 1_000,    EnumCmdLevel.BASIC,        "无效命令"
     Handshake         = "ZepTools handshake request",   False, 1_000,    EnumCmdLevel.BASIC,        "握手请求"
     HandshakeResp     = "ZepTools Handshake",           False, 1_000,    EnumCmdLevel.BASIC,        "握手请求回包"
-    StatusCheck       = "StatusCheck",                  False, 100,      EnumCmdLevel.BASIC,        "获取服务端状态"
+    StatusCheck       = "StatusCheck",                  False, 2_000,    EnumCmdLevel.BASIC,        "获取服务端状态"
     ServerName        = "ServerName",                   False, 100,      EnumCmdLevel.BASIC,        "获取服务主机名称"
     GetImg            = "GetImg",                       False, 100,      EnumCmdLevel.BASIC,        "请求发送当前内存中的图片"
     VideoPlay         = "VideoPlay",                    False, 500,      EnumCmdLevel.BASIC,        "播放视频"
@@ -186,7 +210,7 @@ class EnumCmd(Enum):
     SetStageTPos      = "SetStageTPos",                 False, 100,      EnumCmdLevel.ADVANCED,     "设置T坐标"
     GetStageTStatus   = "GetStageTStatus",              False, 100,      EnumCmdLevel.BASIC,        "获取T坐标"
     SetAutoSnapTask   = "SetAutoSnapTask",              True,  100,      EnumCmdLevel.ADVANCED,     "设置自动拍图任务"
-    GetModel          = "GetModel",                     False, 100,      EnumCmdLevel.BASIC,        "获取型号"
+    GetModel          = "GetModel",                     False, 2_000,    EnumCmdLevel.BASIC,        "获取型号"
     GetBseCfg         = "GetBseCfg",                    False, 1000,     EnumCmdLevel.BASIC,        "获取BSE探测器设置"
     SetBseCfg         = "SetBseCfg",                    True,  1000,     EnumCmdLevel.ADVANCED,     "设置BSE探测器设置"
     ZemRpc            = "ZemRpc",                       True,  100,      EnumCmdLevel.BASIC,        "ZemRpc"
