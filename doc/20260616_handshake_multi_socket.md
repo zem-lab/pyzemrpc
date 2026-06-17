@@ -145,3 +145,70 @@ send to ('192.168.111.207', 61557): $GetModel:,192.168.1.34:62102,...
 - `zemrpc/zem/ip_util.py` — IP 获取与过滤工具
 - `zemrpc/zem/conn/protocol.py` — 协议定义 (`EnumCmd.Handshake`, `RespPacket`)
 - `jgb/conn/udp_socket.py` — UDP socket 封装 (持久 socket 仍用于后续通信)
+
+---
+
+## 后续通信仍超时的真正根因：Windows 防火墙丢弃「随机源端口」回包（2026-06-17）
+
+> 背景：1.2.5/1.2.6 补齐了网卡锁定（`_iface_by_device`）、回调地址重写（`patch_request_callback`）、
+> recv worker 生命周期修复、超时 100ms→2000ms 后，**选设备后发单播命令仍超时**。本节记录该现象的最终排查与结论。
+
+### 现象
+
+- 双网卡 Windows，设备在 WiFi `192.168.108.0/22`。Handshake 能正常发现 20+ 台设备。
+- 选定设备后发单播命令（`GetModel` / `StatusCheck`）超时；**Wireshark 能看到设备回包**
+  （如 `192.168.109.9:544xx -> 192.168.110.82:62520`），但应用层 `_do_framing` 没有 `received udp data`。
+
+### 排查与证据
+
+| 实验 | 结果 | 排除/指向 |
+|------|------|-----------|
+| 纯 socket 阻塞 `recvfrom`（绕开 jgb worker/DDS/framer） | 同样收不到 | **不在** Python 收包链 |
+| `ping 192.168.109.9` / ARP / 路由 | 通；ARP 正常；走 WLAN(110.82) | 网络层、L2、路由**正常** |
+| 广播 handshake | 发现 24+ 台（广播回包本身是设备→主机单播，能收到） | 收包路径本身可用 |
+| 全部已发现设备逐台发**单播** `GetModel` | 23 台中**仅 VirtualZem(`110.74`) 回** | 见下「为何只有 VirtualZem」 |
+| 给 `python.exe` 加防火墙入站 allow 规则后重测 | 仍 0/3 | （见备注，存在设备间歇性混淆，未最终定论） |
+| **在安全中心关闭防火墙后重测 `109.9`** | **0/3 → 3/3** | **坐实是防火墙** |
+
+### 结论（根因）
+
+**Windows Defender 防火墙（设备网卡 WLAN = 专用/Private 配置文件）丢弃真实 ZEM 设备从「随机源端口」发回的单播命令回包。**
+
+- 我们把命令单播发到 `设备:61557`，防火墙据此建立有状态入站 pinhole，**期待回包来自 `61557`**；
+  而设备每次从**随机源端口**（`544xx`）回包 → 被当作「未经请求的入站 UDP」丢弃。
+- Wireshark 抓包点在防火墙**之下**，所以仍能看到这些被丢的回包。
+
+**为何 handshake 能成、为何只有 VirtualZem 能回：**
+
+- 广播 handshake 不受影响 —— 广播会打开一个**更宽的入站 pinhole**，允许来自本网段任意主机/端口的回包。
+- VirtualZem(`110.74`) 是唯一在防火墙开启时也能收到的端点 —— 因为它**从固定 `61557` 回包**
+  （日志 `received udp data from ('192.168.110.74', 61557)`），正好匹配单播 pinhole；真实设备从随机端口回，故被丢。
+
+### 已排除（不是这些原因）
+
+- **客户端 pyzemrpc 1.2.6**：对会回包的端点（VirtualZem）走完整 `zem_api` 栈，`get_model()` 正常返回
+  `VirtualZem/PerlinZem`、`StatusCheck=Idle`，`received udp data` 正常出现 —— 收包链健康。
+- **jgb recv worker / DDS / framer**：纯 socket 裸 `recvfrom` 同样收不到，问题在更底层。
+- **网络 / ARP / 路由 / strong-host**：ping 通、ARP 正常、路由正确；WeakHostReceive 虽为 Disabled，
+  但回包到 `110.82` 正好从拥有该 IP 的 WLAN 进，strong-host 不丢。
+
+> 注：消费端（pyzemcalib 的 `py312_pyzemcalib` venv）此前长期是旧版 **1.2.4**（缺 1.2.5/1.2.6 全部修复、
+> 超时仍 100ms），排查中已 `force-reinstall` 到 1.2.6。
+
+### 当前处理与永久修复候选
+
+- **当前**：暂时在 Windows 安全中心关闭防火墙作为临时绕过；此问题暂不继续深入。
+- **永久修复（保持防火墙开启，未实施）**：加一条按**设备子网**放行入站 UDP 的规则（仅放行实验室网段，范围可控、且不绑进程，GUI 一并覆盖）：
+
+  ```powershell
+  netsh advfirewall firewall add rule name="pyzem-lab-udp-in" dir=in action=allow protocol=UDP remoteip=192.168.108.0/22 enable=yes profile=any
+  ```
+
+  （按 `program` 的入站 allow 规则在本次测试中未能放行随机端口回包，但该次存在设备间歇性混淆，
+  是否真的无效需「防火墙开+规则→探同一台设备」A/B 复测确认。子网规则更可靠。）
+
+### 诊断脚本
+
+- `tests/demo/net_probe.py` — 单目标纯 socket 探针（绑定/embed/发收，多次统计）
+- `tests/demo/raw_recv_test.py` — handshake → 临时 socket / 持久 socket 裸 `recvfrom` 对比
+- 全部已发现设备逐台单播 `GetModel` 扫描（判断哪些设备在线且真的回单播）
