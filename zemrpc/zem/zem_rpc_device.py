@@ -872,7 +872,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         resp = self.send(self.builder.build_check_autofocus())
         return resp.parse_autofocus_status()
 
-    def ensure_af_done(self, timeout=60):
+    def ensure_af_done(self, timeout=600):
         """
         Wait for autofocus operation to complete.
 
