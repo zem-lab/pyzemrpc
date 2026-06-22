@@ -90,6 +90,7 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
     @skip_sync_check
     def handshake(self):
         servers = self.device.handshake()
+        servers.sort(key=lambda addr: f"{addr[0]}:{addr[1]}")
         self.m.servers = servers
         return servers
 

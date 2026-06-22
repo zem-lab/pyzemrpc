@@ -60,7 +60,8 @@ class ZemRpcWidget(QWidget):
         self.ui.btn_send.clicked.connect(self._slot_btn_send)
         self.ui.btn_handshake.clicked.connect(self._slot_btn_handshake)
         self.ui.btn_snap.clicked.connect(self._slot_btn_snap)
-        self.ui.cbox_sem_servers.currentTextChanged.connect(self._slot_cbox_sem_servers_txt_changed)
+        # activated: 用户从下拉列表选择时触发，即使选中项与当前相同也会触发（便于同步失败后重试）
+        self.ui.cbox_sem_servers.activated.connect(self._slot_cbox_sem_servers_activated)
         self.ui.btn_zem_sync.clicked.connect(self._slot_btn_zem_sync)
         self.ui.cbox_work_mode.currentIndexChanged.connect(self._slot_cbox_work_mode_changed)
 
@@ -170,14 +171,28 @@ class ZemRpcWidget(QWidget):
             zem_api.device.set_work_mode(mode)
 
     def update_cbox_sem_servers(self, servers):
-        records = {self.ui.cbox_sem_servers.itemText(i) for i in range(self.ui.cbox_sem_servers.count())}
+        cbox = self.ui.cbox_sem_servers
+        current_key = cbox.currentText()
+
+        addrs = {}
+        for i in range(cbox.count()):
+            key = cbox.itemText(i)
+            addr = cbox.itemData(i)
+            if addr is not None:
+                addrs[key] = addr
+
         for addr in servers:
             ip, port = addr
             key = f"{ip}:{port}"
-            if key in records:
-                continue
-            records.add(key)
-            self.ui.cbox_sem_servers.addItem(key, addr)
+            addrs[key] = addr
+
+        with QSignalBlocker(cbox):
+            cbox.clear()
+            for key in sorted(addrs.keys()):
+                cbox.addItem(key, addrs[key])
+            idx = cbox.findText(current_key)
+            if idx >= 0:
+                cbox.setCurrentIndex(idx)
 
     def _slot_btn_handshake(self):
         def handshake_task():
@@ -220,9 +235,18 @@ class ZemRpcWidget(QWidget):
         else:
             zem_api.send_cmd(cmd)
 
-    def _slot_cbox_sem_servers_txt_changed(self, v):
+    def _apply_selected_sem_server(self) -> bool:
+        """读取下拉框选中设备，更新内存 addr 并触发同步。"""
         addr = qt_util.get_cbox_metadata(self.ui.cbox_sem_servers)
+        if addr is None:
+            return False
         zem_api.update_remote_addr(addr)
+        return True
+
+    def _slot_cbox_sem_servers_activated(self, index: int):
+        if index < 0:
+            return
+        self._apply_selected_sem_server()
 
     def _slot_cbox_mag_txt_changed(self, v: str):
         mag = ui_utils.parse_mag_str(v)
@@ -261,7 +285,10 @@ class ZemRpcWidget(QWidget):
 
     def _slot_btn_zem_sync(self):
         def sync_task():
-            zem_api.sync()
+            # 与下拉选择相同：先 update_remote_addr 更新内存并重绑网卡，再同步
+            if not self._apply_selected_sem_server():
+                zem_api._init_sync_done = False
+                zem_api.sync()
             return True, None
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_zem_sync, sync_task))
