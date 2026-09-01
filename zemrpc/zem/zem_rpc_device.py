@@ -851,14 +851,14 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         if resp.is_ack_ok():
             self.m.beam_size = bs
 
-    def set_autofocus(self):
+    def set_autofocus(self, seed_ob: float | None = None, search_range_ob: float | None = None):
         """
         Start autofocus operation.
 
         Ensures any previous autofocus is complete before starting new one.
         """
         self.ensure_af_done()
-        resp = self.send(self.builder.build_autofocus())
+        resp = self.send(self.builder.build_autofocus(seed_ob, search_range_ob))
         if resp.is_ack_ok():
             ...
 
@@ -919,6 +919,29 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         if resp.is_ack_ok():
             self.m.ob = ob
             return ob
+        return None
+
+    def get_wd(self):
+        """Read working distance using the protocol-level GetWD command."""
+        resp = self.send(self.builder.build_get_wd())
+        parser = getattr(resp, "parse_wd", None)
+        value = parser() if callable(parser) else resp.extra.get("wd")
+        self.m.wd = value
+        return value
+
+    def set_wd(self, wd: float):
+        """Set working distance and retain the value in the device model."""
+        resp = self.send(self.builder.build_set_wd(float(wd)))
+        if resp.is_ack_ok():
+            self.m.wd = float(wd)
+            return float(wd)
+        return None
+
+    def set_beam_shift(self, x_um: float, y_um: float):
+        """Set absolute specimen-plane beam shift in micrometres."""
+        resp = self.send(self.builder.build_set_beam_shift(x_um, y_um))
+        if resp.is_ack_ok():
+            return {"x_um": float(x_um), "y_um": float(y_um)}
         return None
 
     def set_field_rotation(self, degree: int):

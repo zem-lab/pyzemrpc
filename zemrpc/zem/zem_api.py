@@ -151,6 +151,21 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
             time.sleep(wait_stable_ms / 1000)
         return ret
 
+    def get_wd(self):
+        """Return the protocol WD readback (public nextg HAL primitive)."""
+        return self.device.get_wd()
+
+    def set_wd(self, wd: float, wait_stable_ms=0):
+        """Set WD in the device's native working-distance units."""
+        ret = self.device.set_wd(wd)
+        if ret is not None and wait_stable_ms:
+            time.sleep(wait_stable_ms / 1000)
+        return ret
+
+    def set_beam_shift(self, x_um: float, y_um: float):
+        """Set absolute sample-plane beam shift through the zemrpc channel."""
+        return self.device.set_beam_shift(x_um, y_um)
+
     def stage_xy_goto(self, xy):
         pos = self.device.set_stage_pos(StagePos(x=xy[0], y=xy[1]))
         self.m.field_with_loc(self.device.m.scan_info, self.device.m.stage_pos)
@@ -175,9 +190,13 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
         self.stage_xy_goto_closed(xy, stable_after_idle_ms)
         self.run_autofocus()
 
-    def run_autofocus(self):
+    def run_autofocus(self, strategy="auto", seed_ob=None, search_range_ob=None):
         ob0 = self.device.get_ob()
-        self.device.set_autofocus()
+        if isinstance(search_range_ob, dict):
+            lower = search_range_ob.get("min")
+            upper = search_range_ob.get("max")
+            search_range_ob = None if lower is None or upper is None else abs(float(upper) - float(lower))
+        self.device.set_autofocus(seed_ob, search_range_ob)
         self.device.ensure_af_done()
         ob = self.device.get_ob()
         logger.debug(f"autofocus done {ob0} -> {ob}")

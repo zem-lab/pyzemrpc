@@ -159,6 +159,7 @@ class EnumCmd(Enum):
     GetRotation       = "GetRotation",                  False, 100,      EnumCmdLevel.BASIC,        "获取扫描场旋转"
     GetOB             = "GetOB",                        False, 100,      EnumCmdLevel.BASIC,        "获取物镜值"
     SetOB             = "SetOB",                        True,  100,      EnumCmdLevel.BASIC,        "设置物镜值"
+    SetBeamShift      = "SetBeamShift",                 True,  1_000,    EnumCmdLevel.ADVANCED,     "设置样品平面绝对束偏转(um)"
     GetAST            = "GetAST",                       False, 100,      EnumCmdLevel.BASIC,        "获取像散"
     SetAST            = "SetAST",                       True,  100,      EnumCmdLevel.ADVANCED,     "设置像散"
     GetImgSz          = "GetImgSz",                     False, 100,      EnumCmdLevel.BASIC,        "获取图片尺寸"
@@ -403,6 +404,9 @@ class ProtocolBuilder:
         value = math_util.clamp(value, 2 / 65535 * 100, 100)
         return self.build_set(EnumCmd.SetOB, f"{value:.6f}")
 
+    def build_set_beam_shift(self, x_um: float, y_um: float):
+        return self.build_set(EnumCmd.SetBeamShift, f"{float(x_um):.6f},{float(y_um):.6f}")
+
     def build_set_wd(self, value: float):
         value = math_util.clamp(value, 3, 50)
         return self.build_set(EnumCmd.SetWD, f"{value:.6f}")
@@ -433,8 +437,13 @@ class ProtocolBuilder:
     def build_set_auto_snap_task(self, csv_file):
         return self.build_set(EnumCmd.SetAutoSnapTask, str(csv_file))
 
-    def build_autofocus(self):
-        return self.build_get(EnumCmd.AutoFocus)
+    def build_autofocus(self, seed_ob: float | None = None, search_range_ob: float | None = None):
+        """Build device-side AF, optionally with Zeptools fine-AF seed/range."""
+        if seed_ob is None and search_range_ob is None:
+            return self.build_get(EnumCmd.AutoFocus)
+        if seed_ob is None or search_range_ob is None:
+            raise ValueError("seed_ob and search_range_ob must be provided together")
+        return self.build_set(EnumCmd.AutoFocus, f"{float(seed_ob):.6f},{float(search_range_ob):.6f}")
 
     def build_check_autofocus(self):
         return self.build_get(EnumCmd.CheckAutoFocus)
