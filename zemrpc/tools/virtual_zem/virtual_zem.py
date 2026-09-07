@@ -1083,6 +1083,8 @@ class RemoteZem(threading.Thread):
             self._send(packet.addr, self.builder.build_get_ob(self.zem_dev.ob))
         elif cmd == EnumCmd.SetOB:
             self._send(packet.addr, self.resp_set_ob(packet))
+        elif cmd == EnumCmd.SetOBRaw:
+            self._send(packet.addr, self.resp_set_ob_raw(packet))
         elif cmd == EnumCmd.GetWD:
             self._send(packet.addr, self.builder.build_get_wd(self.zem_dev.wd))
         elif cmd == EnumCmd.SetWD:
@@ -1151,6 +1153,10 @@ class RemoteZem(threading.Thread):
     def resp_set_ob(self, packet: ReqPacket):
         self.zem_dev.ob = packet.parse_ob()
         return self.builder.build_ack(EnumCmd.SetOB)
+
+    def resp_set_ob_raw(self, packet: ReqPacket):
+        self.zem_dev.ob = packet.parse_ob()
+        return self.builder.build_ack(EnumCmd.SetOBRaw)
 
     def resp_set_hv(self, packet: ReqPacket):
         # 立即更新 acc_v 为设置值

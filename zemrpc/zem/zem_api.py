@@ -147,7 +147,14 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
 
     def set_ob(self, ob: int, wait_stable_ms=0):
         ret = self.device.set_ob(ob)
-        if ret and wait_stable_ms:
+        if ret is not None and wait_stable_ms:
+            time.sleep(wait_stable_ms / 1000)
+        return ret
+
+    def set_ob_raw(self, ob: int, wait_stable_ms=0):
+        """Write the exact unsigned 16-bit OB DAC value without WD conversion."""
+        ret = self.device.set_ob_raw(ob)
+        if ret is not None and wait_stable_ms:
             time.sleep(wait_stable_ms / 1000)
         return ret
 

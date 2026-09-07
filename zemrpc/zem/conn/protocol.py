@@ -7,6 +7,7 @@ import json
 import base64
 import collections
 import ipaddress
+from numbers import Integral
 
 from typing import Tuple
 from loguru import logger
@@ -159,6 +160,7 @@ class EnumCmd(Enum):
     GetRotation       = "GetRotation",                  False, 100,      EnumCmdLevel.BASIC,        "获取扫描场旋转"
     GetOB             = "GetOB",                        False, 100,      EnumCmdLevel.BASIC,        "获取物镜值"
     SetOB             = "SetOB",                        True,  100,      EnumCmdLevel.BASIC,        "设置物镜值"
+    SetOBRaw          = "SetOBRaw",                     True,  100,      EnumCmdLevel.BASIC,        "直接设置物镜DAC值"
     SetBeamShift      = "SetBeamShift",                 True,  1_000,    EnumCmdLevel.ADVANCED,     "设置样品平面绝对束偏转(um)"
     GetAST            = "GetAST",                       False, 100,      EnumCmdLevel.BASIC,        "获取像散"
     SetAST            = "SetAST",                       True,  100,      EnumCmdLevel.ADVANCED,     "设置像散"
@@ -397,8 +399,16 @@ class ProtocolBuilder:
         return self.build_get(EnumCmd.GetOB)
 
     def build_set_ob(self, value: int):
-        value = math_util.clamp(value, 2, 65535)
-        return self.build_set(EnumCmd.SetOB, f"{value}")
+        """Build an exact raw OB command; kept as the canonical Python API name."""
+        return self.build_set_ob_raw(value)
+
+    def build_set_ob_raw(self, value: int):
+        if isinstance(value, bool) or not isinstance(value, Integral):
+            raise ValueError("OB must be an integer in [0, 65535]")
+        raw_value = int(value)
+        if not 0 <= raw_value <= 65535:
+            raise ValueError("OB must be an integer in [0, 65535]")
+        return self.build_set(EnumCmd.SetOBRaw, f"{raw_value}")
 
     def build_set_ob_pct(self, value):
         value = math_util.clamp(value, 2 / 65535 * 100, 100)

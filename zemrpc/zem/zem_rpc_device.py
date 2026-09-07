@@ -911,15 +911,15 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         Returns:
             int: New objective value if successful, None if failed
         """
-        if ob <= 0:
-            return None
-
-        # Convert to percentage for device command
-        resp = self.send(self.builder.build_set_ob_pct(ob / 65535 * 100))
+        resp = self.send(self.builder.build_set_ob_raw(ob))
         if resp.is_ack_ok():
             self.m.ob = ob
             return ob
         return None
+
+    def set_ob_raw(self, ob: int):
+        """Explicit alias for callers that want the wire unit in the method name."""
+        return self.set_ob(ob)
 
     def get_wd(self):
         """Read working distance using the protocol-level GetWD command."""
