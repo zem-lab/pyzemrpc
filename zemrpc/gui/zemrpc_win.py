@@ -14,10 +14,9 @@ from jgb.gui.qt.qt_slots import QPushButtonClicked
 
 from zemrpc.zem.context import ctx
 from zemrpc.gui import ui_utils
-from zemrpc.zem.models import StageMoveDirection
+from zemrpc.zem.models import StageMoveDirection, EnumCmdLevel, format_exception_for_ui
 from zemrpc.zem.zem_api import zem_api
 from zemrpc.zem.conn.protocol import EnumCmd, EnumVideoStatus
-from zemrpc.zem.models import EnumCmdLevel
 
 from .widgets.zem_img_viewer import ZemImgViewer
 from .widgets.nav_img_viewer import NavImgViewer
@@ -120,6 +119,7 @@ class ZemRpcWidget(QWidget):
         self._init_cbox_mag()
         self._init_cbox_vzem()
         self._init_cbox_work_mode()
+        self._init_cbox_sem_servers()
 
         self.ui.slider_ob.setRange(0, 65535)
         self.ui.slider_ob.setMidValueLabel("32768")
@@ -165,6 +165,13 @@ class ZemRpcWidget(QWidget):
             cbox.addItem("高级模式", EnumCmdLevel.ADVANCED)
         cbox.setCurrentIndex(0)
 
+    def _init_cbox_sem_servers(self):
+        cbox = self.ui.cbox_sem_servers
+        with QSignalBlocker(cbox):
+            cbox.addItem(ui_utils.DEFAULT_SEM_SERVER_LABEL, ui_utils.DEFAULT_SEM_SERVER_ADDR)
+            cbox.setCurrentIndex(0)
+        zem_api.update_remote_addr(ui_utils.DEFAULT_SEM_SERVER_ADDR, sync=False)
+
     def _slot_cbox_work_mode_changed(self, index: int):
         mode = self.ui.cbox_work_mode.currentData()
         if mode is not None:
@@ -173,26 +180,18 @@ class ZemRpcWidget(QWidget):
     def update_cbox_sem_servers(self, servers):
         cbox = self.ui.cbox_sem_servers
         current_key = cbox.currentText()
-
-        addrs = {}
-        for i in range(cbox.count()):
-            key = cbox.itemText(i)
-            addr = cbox.itemData(i)
-            if addr is not None:
-                addrs[key] = addr
-
-        for addr in servers:
-            ip, port = addr
-            key = f"{ip}:{port}"
-            addrs[key] = addr
+        existing = [(cbox.itemText(i), cbox.itemData(i)) for i in range(cbox.count())]
+        items = ui_utils.merge_sem_server_items(existing, servers)
 
         with QSignalBlocker(cbox):
             cbox.clear()
-            for key in sorted(addrs.keys()):
-                cbox.addItem(key, addrs[key])
+            for key, addr in items:
+                cbox.addItem(key, addr)
             idx = cbox.findText(current_key)
             if idx >= 0:
                 cbox.setCurrentIndex(idx)
+            elif cbox.count() > 0:
+                cbox.setCurrentIndex(0)
 
     def _slot_btn_handshake(self):
         def handshake_task():
@@ -243,10 +242,25 @@ class ZemRpcWidget(QWidget):
         zem_api.update_remote_addr(addr)
         return True
 
+    def _on_sync_complete(self, success, result):
+        if success:
+            return
+        ctx.trigger.run(qt_util.show_message_box_warning, self, format_exception_for_ui(result), "同步状态失败")
+
+    def _run_sync_selected_server(self):
+        def sync_task():
+            if not self._apply_selected_sem_server():
+                zem_api._init_sync_done = False
+                zem_api.sync()
+
+        ctx.async_executor.run(
+            QPushButtonClicked(self.ui.btn_zem_sync, sync_task, self._on_sync_complete, loading_text="同步中...")
+        )
+
     def _slot_cbox_sem_servers_activated(self, index: int):
         if index < 0:
             return
-        self._apply_selected_sem_server()
+        self._run_sync_selected_server()
 
     def _slot_cbox_mag_txt_changed(self, v: str):
         mag = ui_utils.parse_mag_str(v)
@@ -284,14 +298,7 @@ class ZemRpcWidget(QWidget):
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_af, af_task))
 
     def _slot_btn_zem_sync(self):
-        def sync_task():
-            # 与下拉选择相同：先 update_remote_addr 更新内存并重绑网卡，再同步
-            if not self._apply_selected_sem_server():
-                zem_api._init_sync_done = False
-                zem_api.sync()
-            return True, None
-
-        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_zem_sync, sync_task))
+        self._run_sync_selected_server()
 
     def _slot_btn_hv_set(self):
         if not qt_util.show_confirmed_box(self):

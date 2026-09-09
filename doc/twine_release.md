@@ -67,6 +67,9 @@ inv build_all
 # 1. 构建主包（纯 Python wheel）
 inv build
 
+# 可选：将 GUI 编译为独立 exe（Nuitka standalone，输出 dist/exe/zemrpc_main.dist/）
+inv build_exe
+
 # 2. 构建 Rust 加速包（平台相关 wheel）
 inv build_rust
 

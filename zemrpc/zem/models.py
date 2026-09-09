@@ -361,3 +361,21 @@ class ZemException(Exception):
     @classmethod
     def permission_denied(cls, msg):
         return cls(msg, ZemException.Code.PermissionDenied)
+
+
+def format_exception_for_ui(exc: Exception) -> str:
+    """Convert protocol/API exceptions into short GUI messages."""
+    if isinstance(exc, ZemException) and exc.code == ZemException.Code.ConnTimeout:
+        msg = "命令超时，可能电镜服务未开启"
+        if exc.msg and exc.msg != msg:
+            return f"{msg}\n详细信息：{exc.msg}"
+        return msg
+    if isinstance(exc, TimeoutError):
+        msg = "命令超时，可能电镜服务未开启"
+        detail = str(exc).strip()
+        if detail and detail != msg:
+            return f"{msg}\n详细信息：{detail}"
+        return msg
+    if isinstance(exc, ZemException):
+        return exc.msg
+    return str(exc)

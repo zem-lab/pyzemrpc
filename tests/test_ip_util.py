@@ -30,6 +30,11 @@ def test_find_local_ip_for_target_fallback_prefix():
         assert ip_util._find_local_ip_for_target("192.168.111.207", candidates) == "192.168.110.82"
 
 
+def test_get_real_local_ip_uses_loopback_for_loopback_target():
+    with patch.object(ip_util, "_get_all_local_ips", return_value=["192.168.1.34", "192.168.110.82"]):
+        assert ip_util.get_real_local_ip(target_ip="127.0.0.1") == "127.0.0.1"
+
+
 def test_get_real_local_ip_prefers_target_subnet():
     all_ips = ["192.168.1.34", "192.168.110.82"]
     subnets = [

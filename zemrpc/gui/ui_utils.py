@@ -2,9 +2,34 @@
 # -*- coding: utf-8 -*-
 # tr!bf tribf@tribf.com
 
-from typing import Dict
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 cbox_style = "QComboBox QAbstractItemView::item { min-height: 15px; min-width: 50px; }QListView::item:selected { color: black; background-color: lightgray}"
+
+DEFAULT_SEM_SERVER_ADDR = ("127.0.0.1", 61557)
+DEFAULT_SEM_SERVER_LABEL = "本机"
+
+
+def merge_sem_server_items(
+    existing_items: Sequence[Tuple[str, Optional[Tuple[str, int]]]],
+    discovered: Optional[Iterable[Tuple[str, int]]] = None,
+) -> List[Tuple[str, Tuple[str, int]]]:
+    """Keep 本机 first; append discovered ip:port; skip the loopback duplicate."""
+    items: Dict[str, Tuple[str, int]] = {DEFAULT_SEM_SERVER_LABEL: DEFAULT_SEM_SERVER_ADDR}
+    for key, addr in existing_items:
+        if addr is None or addr == DEFAULT_SEM_SERVER_ADDR:
+            continue
+        items[key] = addr
+    for addr in discovered or []:
+        if addr == DEFAULT_SEM_SERVER_ADDR:
+            continue
+        ip, port = addr
+        items[f"{ip}:{port}"] = addr
+
+    ordered: List[Tuple[str, Tuple[str, int]]] = [(DEFAULT_SEM_SERVER_LABEL, DEFAULT_SEM_SERVER_ADDR)]
+    for key in sorted(k for k in items if k != DEFAULT_SEM_SERVER_LABEL):
+        ordered.append((key, items[key]))
+    return ordered
 
 
 def get_api_cmds():

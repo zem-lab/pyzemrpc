@@ -217,20 +217,26 @@ def get_real_local_ip(target_ip: Optional[str] = None) -> str:
     Get real local IP address, filtering out virtual IPs like Clash Fake-IP.
     
     This function:
-    1. Gets all local IP addresses
-    2. Filters out Clash Fake-IP range (198.18.0.0/15)
-    3. Filters out loopback addresses (127.0.0.1)
-    4. Prioritizes private IP addresses (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
-    5. If target_ip is provided, prioritizes IPs in the same subnet
-    6. Falls back to os_util.get_default_ip() if no suitable IP found
+    1. If target_ip is loopback, returns 127.0.0.1
+    2. Gets all local IP addresses
+    3. Filters out Clash Fake-IP range (198.18.0.0/15)
+    4. Filters out loopback addresses (127.0.0.1) for LAN targets
+    5. Prioritizes private IP addresses (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+    6. If target_ip is provided, prioritizes IPs in the same subnet
+    7. Falls back to os_util.get_default_ip() if no suitable IP found
     
     Args:
-        target_ip: Optional target device IP address. If provided, prioritize
-                   IPs in the same subnet.
+        target_ip: Optional target device IP address. Loopback targets use
+                   127.0.0.1; otherwise prioritize IPs in the same subnet.
         
     Returns:
         Real local IP address string
     """
+    # 本机回环目标必须走 127.0.0.1，不能选局域网网卡，否则 Windows 会 WinError 10049
+    if target_ip and _is_loopback_ip(target_ip):
+        logger.debug(f"Selected loopback IP for target {target_ip}")
+        return "127.0.0.1"
+
     # Get all local IPs
     all_ips = _get_all_local_ips()
     

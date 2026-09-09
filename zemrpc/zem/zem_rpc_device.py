@@ -310,6 +310,9 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         self._iface_by_device: dict[Tuple[str, int], str] = {}
 
     def _resolve_local_ip_for_device(self, addr: Tuple[str, int]) -> str:
+        if ip_util._is_loopback_ip(addr[0]):
+            logger.debug(f"Use loopback interface for device {addr[0]}:{addr[1]}")
+            return "127.0.0.1"
         if local_ip := self._iface_by_device.get(addr):
             logger.debug(f"Use handshake interface {local_ip} for device {addr[0]}:{addr[1]}")
             return local_ip
@@ -390,6 +393,46 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         self.builder.ip, self.builder.port = self.socket.sock.getsockname()
         return self.builder.build_handshake_request()
 
+    def _handshake_probe(self, bind_ip: str, dest: Tuple[str, int], deadline: float) -> List[RespPacket]:
+        """Send a handshake from bind_ip and collect HandshakeResp until deadline."""
+        packets: List[RespPacket] = []
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            sock.settimeout(0.3)
+            sock.bind((bind_ip, 0))
+
+            local_ip, local_port = sock.getsockname()
+            self.builder.ip, self.builder.port = local_ip, local_port
+            req = self.builder.build_handshake_request()
+            sock.sendto(req.data, dest)
+            logger.debug(f"Handshake probe {bind_ip} -> {dest[0]}:{dest[1]} ({local_ip}:{local_port})")
+
+            while time.time() < deadline:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    break
+                sock.settimeout(min(remaining, 0.3))
+                try:
+                    data, addr = sock.recvfrom(4096)
+                except socket.timeout:
+                    break
+                except Exception:
+                    break
+                for packet_data in self.parser.append(addr, data):
+                    resp = RespPacket(packet_data)
+                    resp.extra["addr"] = addr
+                    resp.extra["local_ip"] = local_ip
+                    if resp.cmd == EnumCmd.HandshakeResp and not resp.is_error():
+                        packets.append(resp)
+        except Exception as e:
+            logger.debug(f"Handshake on {bind_ip} failed: {e}")
+        finally:
+            if sock:
+                sock.close()
+        return packets
+
     def handshake(self):
         """
         Perform handshake with devices on the network.
@@ -402,79 +445,58 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         (e.g. wired + WiFi), we create a temporary socket per interface,
         broadcast from each, and merge the results.
 
+        UDP broadcast cannot reach 127.0.0.1, so localhost is probed by unicast.
+        Scanning must not rewrite the callback address of the current target;
+        if the selected device is 127.0.0.1, subsequent packets still embed
+        127.0.0.1:<ephemeral-port>.
+
         Returns:
             List[Tuple[str, int]]: List of discovered device addresses (ip, port)
         """
-        # Collect all local private IPs (wired + WiFi + ...)
-        all_ips = ip_util._get_all_local_ips()
-        local_ips = []
-        for ip in all_ips:
-            if ip_util._is_loopback_ip(ip) or ip_util._is_clash_fake_ip(ip):
-                continue
-            if ip_util._is_private_ip(ip):
-                local_ips.append(ip)
+        dest_port = self.m.addr[1] or 61557
+        all_packets: List[RespPacket] = []
 
-        if not local_ips:
-            # Fallback: use the existing single-IP socket approach
-            resp = self.send(self.build_handshake_request())
-            return [packet.parse_ip_port() for packet in resp if not packet.is_error()]
+        try:
+            # 本机方案：广播到不了回环，单独单播探测 127.0.0.1
+            loopback_deadline = time.time() + 0.4
+            all_packets.extend(self._handshake_probe("127.0.0.1", ("127.0.0.1", dest_port), loopback_deadline))
 
-        # Broadcast on each interface
-        all_packets = []
-        deadline = time.time() + (EnumCmd.Handshake.timeout / 1000)
+            all_ips = ip_util._get_all_local_ips()
+            local_ips = []
+            for ip in all_ips:
+                if ip_util._is_loopback_ip(ip) or ip_util._is_clash_fake_ip(ip):
+                    continue
+                if ip_util._is_private_ip(ip):
+                    local_ips.append(ip)
 
-        for ip in local_ips:
-            sock = None
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-                sock.settimeout(0.3)
-                sock.bind((ip, 0))
+            if not local_ips:
+                if not all_packets:
+                    resp = self.send(self.build_handshake_request())
+                    all_packets.extend(packet for packet in resp if not packet.is_error())
+            else:
+                deadline = time.time() + (EnumCmd.Handshake.timeout / 1000)
+                for ip in local_ips:
+                    all_packets.extend(self._handshake_probe(ip, ("<broadcast>", dest_port), deadline))
 
-                local_ip, local_port = sock.getsockname()
-                self.builder.ip, self.builder.port = local_ip, local_port
-                req = self.builder.build_handshake_request()
+            seen = set()
+            unique = []
+            for pkt in all_packets:
+                ipport = pkt.parse_ip_port()
+                if ipport not in seen:
+                    seen.add(ipport)
+                    unique.append(pkt)
+                    if local_ip := pkt.extra.get("local_ip"):
+                        self._iface_by_device[ipport] = local_ip
 
-                sock.sendto(req.data, ("<broadcast>", self.m.addr[1]))
-                logger.debug(f"Handshake broadcast on {ip} ({local_ip}:{local_port})")
-
-                # Collect responses from this interface
-                while time.time() < deadline:
-                    try:
-                        remaining = deadline - time.time()
-                        if remaining <= 0:
-                            break
-                        sock.settimeout(min(remaining, 0.3))
-                        data, addr = sock.recvfrom(4096)
-                        for packet_data in self.parser.append(addr, data):
-                            resp = RespPacket(packet_data)
-                            resp.extra["addr"] = addr
-                            resp.extra["local_ip"] = local_ip
-                            if resp.cmd == EnumCmd.HandshakeResp and not resp.is_error():
-                                all_packets.append(resp)
-                    except socket.timeout:
-                        break
-                    except Exception:
-                        break
-            except Exception as e:
-                logger.debug(f"Handshake on {ip} failed: {e}")
-            finally:
-                if sock:
-                    sock.close()
-
-        # Deduplicate by (ip, port)
-        seen = set()
-        unique = []
-        for pkt in all_packets:
-            ipport = pkt.parse_ip_port()
-            if ipport not in seen:
-                seen.add(ipport)
-                unique.append(pkt)
-                if local_ip := pkt.extra.get("local_ip"):
-                    self._iface_by_device[ipport] = local_ip
-
-        logger.info(f"Handshake found {len(unique)} device(s) on {len(local_ips)} interface(s)")
-        return [packet.parse_ip_port() for packet in unique]
+            logger.info(f"Handshake found {len(unique)} device(s)")
+            return [packet.parse_ip_port() for packet in unique]
+        finally:
+            # 扫描只更新可选目标，不得改写当前本机/已选设备的回包地址
+            if self.m.addr[0] != "UNK":
+                try:
+                    self._prepare_comm()
+                except Exception as e:
+                    logger.debug(f"Restore comm after handshake failed: {e}")
 
     def video_play_on(self):
         """

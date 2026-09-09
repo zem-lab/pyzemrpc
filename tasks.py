@@ -6,6 +6,7 @@ import sys
 import os
 import contextlib
 import shutil
+import subprocess
 from pathlib import Path
 from invoke import task
 from invoke.context import Context
@@ -80,3 +81,42 @@ def build_all(c, docs=False):
     """构建 pyzemrpc 纯 Python wheel + 两个 Rust 加速包 wheel"""
     print("\n=== 所有 wheel 构建完成 ===")
     print("wheel 文件位于各自目录的 target/wheels/ 下")
+
+
+@task(pre=[git_info, ui2py])
+def build_exe(c: Context):
+    """将 zemrpc.gui.zemrpc_main 编译为独立目录分发的 pyzemrpc.exe"""
+    out_dir = PROJ_HOME / "dist" / "exe"
+    if out_dir.exists():
+        shutil.rmtree(out_dir, True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "nuitka",
+        "--mode=standalone",
+        "--assume-yes-for-downloads",
+        "--msvc=latest",
+        "--enable-plugin=pyside6",
+        "--windows-console-mode=disable",
+        "--output-dir=dist/exe",
+        "--output-filename=pyzemrpc.exe",
+        "--product-name=pyzemrpc",
+        "--product-version=1.2.6.2",
+        "--file-version=1.2.6.2",
+        "--file-description=ZEPTOOLS ZEM Remote Control",
+        "--include-package=zemrpc",
+        "--include-data-files=conf/config.yml=data/pyzemrpc/conf/config.yml",
+        "--nofollow-import-to=mandelbrot_zem_rs",
+        "--nofollow-import-to=perlin_zem_rs",
+        "--nofollow-import-to=tests",
+        "--main=zemrpc/gui/zemrpc_main.py",
+    ]
+    c.run(subprocess.list2cmdline(cmd))
+    dist_dir = out_dir / "zemrpc_main.dist"
+    exe = dist_dir / "pyzemrpc.exe"
+    if exe.exists():
+        print(f"独立 exe: {exe}")
+    else:
+        print(f"Nuitka 输出目录: {out_dir}")

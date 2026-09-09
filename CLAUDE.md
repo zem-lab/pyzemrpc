@@ -41,6 +41,9 @@ inv git_info
 
 # Convert .ui Qt Designer files to Python
 inv ui2py
+
+# Compile GUI (zemrpc.gui.zemrpc_main) to a standalone pyzemrpc.exe via Nuitka
+inv build_exe
 ```
 
 **Rust accelerator packages** are built with `maturin` and require a Rust toolchain. They produce platform-specific wheels (e.g., `cp312-win_amd64`). When not installed, the virtual ZEM falls back to pure Python/NumPy implementations automatically.
@@ -97,6 +100,8 @@ python -m zemrpc.tools.virtual_zem.main
 ```
 
 The virtual ZEM UDP port is `61557` and the JSON-RPC server port is auto-selected (default 0) via `--port`. The UDP service binds to `0.0.0.0:61557`, while handshake and image download responses advertise a concrete reachable local IP.
+
+GUI defaults to **本机** (`127.0.0.1:61557`). Handshake also unicasts loopback because UDP broadcast cannot reach `127.0.0.1`. Connecting to loopback binds and embeds `127.0.0.1:<ephemeral-port>` as the callback address.
 
 ## High-Level Architecture
 

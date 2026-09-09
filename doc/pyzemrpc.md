@@ -59,6 +59,9 @@ inv build_all
 # 构建带文档
 inv build --docs
 
+# 将 GUI 入口编译为独立目录分发的 pyzemrpc.exe（需 Nuitka + MSVC，耗时长）
+inv build_exe
+
 # 辅助任务
 inv git_info   # 将 git commit hash 写入 zemrpc/__commit__.py
 inv ui2py      # 将 .ui Qt Designer 文件转换为 Python
@@ -91,6 +94,24 @@ python -m zemrpc.tools.virtual_zem.main
 ```
 
 默认UDP端口是 `61557`，JSON-RPC服务器端口自动选择（`--port 0`）。
+
+GUI 启动后设备下拉框默认选中 **本机**（`127.0.0.1:61557`）。本机已启动虚拟 ZEM 或电镜代理时，可直接点「同步状态」，不必先扫描。UDP 广播到不了回环，扫描时会额外单播探测 `127.0.0.1`。
+
+## 2026-09 本机连接
+
+从 `pyzemcap_v2` 迁入扫描设备时的本机方案，版本 `1.2.6.dev2026090902`。
+
+- GUI 默认设备项 `本机` = `127.0.0.1:61557`。启动只写入地址，不自动同步。
+- 目标为回环时，本地绑定和报文回包地址固定为 `127.0.0.1:<临时端口>`，避免 Windows `WinError 10049`。
+- 扫描在线设备：各网卡广播 + `127.0.0.1` 单播；扫描结束后按当前目标恢复绑定，不改写本机回包地址。
+- 本机服务未开时，同步失败提示：`命令超时，可能电镜服务未开启`。`zem_api.sync()` 失败会重新抛出异常。
+- `inv build` 产物：`dist/pyzemrpc-1.2.6.dev2026090902-py3-none-any.whl`。
+- `inv build_exe` 用 Nuitka standalone 编译 `zemrpc/gui/zemrpc_main.py`，输出 `dist/exe/zemrpc_main.dist/pyzemrpc.exe`。该编译依赖 Nuitka 与 MSVC，耗时长；独立 exe 内 `sys.executable` 不是 Python，GUI「启动虚拟 ZEM」子进程不可用。
+
+相关实现：
+- `zemrpc/gui/zemrpc_win.py`、`zemrpc/gui/ui_utils.py`
+- `zemrpc/zem/zem_rpc_device.py`、`zemrpc/zem/ip_util.py`、`zemrpc/zem/zem_api.py`、`zemrpc/zem/models.py`
+- `tests/test_loopback_local.py`、`tests/test_exception.py`、`tests/test_ip_util.py`
 
 ## 架构概述
 
