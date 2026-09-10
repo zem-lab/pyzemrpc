@@ -22,6 +22,7 @@ import time
 import socket
 import numpy as np
 import threading
+from concurrent.futures import CancelledError
 from loguru import logger
 from pydantic import Field
 from typing import List, Tuple
@@ -35,12 +36,18 @@ from jgb.conn.udp_socket import UdpSocket, UdpPacket
 
 from zemrpc import app_cfg
 from zemrpc.zem.context import ctx
-from zemrpc.zem.conn.img_receiver import ImgReceiver
+from zemrpc.zem.conn.img_receiver import ImgReceiver, ImageTransferError
 from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, MetaItem, NavParam, ScanInfo, SnapArgs, StagePos, ZemException, BseInfo, EnumCmdLevel
 from zemrpc.zem.conn.protocol import EnumAutofocusStatus, EnumCmd, EnumHvStatus, EnumStageStatus, EnumVideoStatus, ProtocolBuilder, ProtocolParser, Request, RespPacket, patch_request_callback
 from zemrpc.zem.conn.rpc_protocol import JsonRpcBuilder, RespProtocolNg, RpcSnapResp, RpcStatusResp
 from zemrpc.zem import zem_util as zu
 from zemrpc.zem import ip_util
+
+
+def _retry_pubsub_request(retry_state):
+    """Snap has no request ID/deduplication; an ambiguous result is final."""
+    request = retry_state.args[1] if len(retry_state.args) > 1 else retry_state.kwargs["req"]
+    return retry_state.outcome.failed and request.cmd != EnumCmd.Snap and not isinstance(retry_state.outcome.exception(), CancelledError)
 
 
 class HandshakePubSub(PubSub):
@@ -104,6 +111,60 @@ class GetImagePubSub(PubSub):
         """
         super().__init__(request, **kwargs)
         self.is_newbee = is_newbee
+        self.error = None
+        self._deadline = time.monotonic() + self.timeout
+        self._state_lock = threading.Lock()
+        self._terminal = False
+        self._receiver = None
+        self._receiver_thread = None
+
+    def _finish(self, error=None):
+        # Caller owns _state_lock. A late/duplicate callback cannot overwrite a
+        # timed-out request or publish into a later subscription with this key.
+        if self._terminal:
+            return
+        self.error = error
+        self.is_timeout = isinstance(error, TimeoutError)
+        if error is not None:
+            error.image_transfer_details = self._receiver.transfer_details() if self._receiver is not None else {"phase": "response", "received_bytes": 0, "expected_bytes": None}
+            logger.warning(f"Image request failed: {type(error).__name__}: {error}; {error.image_transfer_details}")
+        self._terminal = True
+        self.notify_done()
+
+    def cancel(self):
+        with self._state_lock:
+            self._canceled = True
+            self._finish(CancelledError(f"{self.key} image reception cancelled"))
+        self.close()
+
+    def close(self):
+        """Release local transport without issuing SnapCancel or retrying Snap."""
+        with self._state_lock:
+            receiver, worker = self._receiver, self._receiver_thread
+        if receiver is not None:
+            receiver.cancel()
+        if worker is not None and worker.ident is not None and worker is not threading.current_thread():
+            worker.join(timeout=1.0)
+            if worker.is_alive():
+                logger.warning(f"Image worker has not exited after local transport cancellation: {receiver.transfer_details()}")
+
+    def wait(self):
+        # Do not raise here: jgb's PubSubManager must remove the subscription
+        # before timeout_handler / pubsub_send propagates the terminal error.
+        while not self.event.is_set():
+            with self._state_lock:
+                remaining = self._deadline - time.monotonic()
+                if self._canceled:
+                    self._finish(CancelledError(f"{self.key} image reception cancelled"))
+                elif remaining <= 0:
+                    self._finish(TimeoutError(f"{self.key}命令超时"))
+            self.event.wait(max(0.0, min(0.1, remaining)))
+        self.close()
+
+    def timeout_handler(self):
+        if self.error is not None:
+            raise self.error
+        super().timeout_handler()
 
     def pub(self, packet: RespPacket):
         """
@@ -118,26 +179,30 @@ class GetImagePubSub(PubSub):
         if packet.get_pubsub_key() != self.request.get_pubsub_key():
             return False
 
-        self.result = packet
-        img_resp = packet.parse_img_resp()
-        if img_resp is not None:
-            # Start image reception in separate thread to avoid blocking
-            threading.Thread(target=self._receive_img, args=(img_resp,), daemon=True).start()
-        else:
-            self.notify_done()
-
+        with self._state_lock:
+            if self._terminal or self.result is not None:
+                return True
+            if time.monotonic() >= self._deadline:
+                self._finish(TimeoutError(f"{self.key}命令超时"))
+                return True
+            self.result = packet
+            try:
+                if packet.is_error() or packet.is_invalid_cmd():
+                    self._finish()
+                    return True
+                img_resp = packet.parse_img_resp()
+                if img_resp is None:
+                    raise ImageTransferError(f"{self.key} invalid image service response: {packet}")
+                self._receiver = ImgReceiver(img_resp, self.img_received_handler, self.is_newbee, deadline=self._deadline)
+                self._receiver_thread = threading.Thread(target=self._receiver, name=f"{self.key}-image-receiver", daemon=True)
+                self._receiver_thread.start()
+            except Exception as error:
+                if not isinstance(error, ImageTransferError):
+                    failure = ImageTransferError(f"{self.key} cannot start image reception: {error}")
+                    failure.__cause__ = error
+                    error = failure
+                self._finish(error)
         return True
-
-    def _receive_img(self, img_resp):
-        """
-        Handle image data reception in a separate thread.
-
-        Args:
-            img_resp: Image response containing reception parameters
-        """
-        receiver = ImgReceiver(img_resp, self.img_received_handler, self.is_newbee)
-        receiver()
-        self.notify_done()
 
     def img_received_handler(self, img_receiver: ImgReceiver):
         """
@@ -146,8 +211,17 @@ class GetImagePubSub(PubSub):
         Args:
             img_receiver (ImgReceiver): The image receiver with completed image data
         """
-        self.result.extra["img"] = img_receiver.img
-        self.notify_done()
+        with self._state_lock:
+            if self._terminal:
+                return
+            error = img_receiver.error
+            if error is None and time.monotonic() >= self._deadline:
+                error = TimeoutError(f"{self.key}命令超时")
+            if error is None and img_receiver.img is None:
+                error = ImageTransferError(f"{self.key} image receiver completed without an image")
+            if error is None:
+                self.result.extra["img"] = img_receiver.img
+            self._finish(error)
 
 
 class ZemModel(AppTreeNode):
@@ -1178,7 +1252,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
 
         return self.pubsub_send(req)
 
-    @retry(reraise=True, stop=stop_after_attempt(3), wait=wait_fixed(1) + wait_random(0, 1), before_sleep=before_sleep_log(logger, log_level="DEBUG"))
+    @retry(retry=_retry_pubsub_request, reraise=True, stop=stop_after_attempt(3), wait=wait_fixed(1) + wait_random(0, 1), before_sleep=before_sleep_log(logger, log_level="DEBUG"))
     def pubsub_send(self, req: Request):
         """
         Send request using publish-subscribe pattern with retry logic.
@@ -1205,11 +1279,17 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         else:
             ps = PubSub(req, timeout=req.timeout_ms)
 
-        resp = self.rws.pubsub_send(ps)
+        try:
+            resp = self.rws.pubsub_send(ps)
+            if isinstance(ps, GetImagePubSub) and ps.error is not None:
+                raise ps.error
+        finally:
+            if isinstance(ps, GetImagePubSub):
+                ps.cancel()
 
         # Check for errors in non-handshake, non-RPC responses
         if req.cmd != EnumCmd.Handshake and req.cmd != EnumCmd.ZemRpc:
-            if e := resp.is_error():
+            if resp.is_error() or resp.is_invalid_cmd():
                 raise ZemException.request_error("")
         return resp
 
