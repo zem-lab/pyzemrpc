@@ -438,6 +438,21 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         self.parser.buffer.clear()
         self.builder.ip, self.builder.port = self.socket.sock.getsockname()
 
+    def disconnect(self):
+        """Release the local UDP channel while idle; sends no device command.
+
+        Callers must serialize this with RPC requests. update_remote_addr can
+        reopen the same device instance after disconnecting.
+        """
+        self.socket.rcv_worker.stop()
+        self.socket.rcv_worker.thread = None
+        with self.socket.mutex:
+            if self.socket._socket is not None:
+                self.socket._socket.close()
+                self.socket._socket = None
+        self.parser.buffer.clear()
+        self.m.addr = ("UNK", 0)
+
     def _prepare_comm(self):
         """Ensure socket and builder use the interface that can reach the selected device."""
         if self.m.addr[0] == "UNK":

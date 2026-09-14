@@ -9,7 +9,7 @@ from qtpy.QtWidgets import QWidget, QListView, QComboBox
 
 from jgb.gui.qt import qt_util
 from jgb.gui.qt.dds_util import Attrs2QtValue
-from jgb.gui.qt.qt_model import QEmitter
+from jgb.gui.qt.qt_model import QEmitter, QTrigger
 from jgb.gui.qt.qt_slots import QPushButtonClicked
 
 from zemrpc.zem.context import ctx
@@ -43,6 +43,7 @@ class RecursivelyHandler:
 class ZemRpcWidget(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
+        self.trigger = QTrigger(True)
 
         self.ui = Ui_Form()
         self.ui.setupUi(self)
@@ -245,7 +246,7 @@ class ZemRpcWidget(QWidget):
     def _on_sync_complete(self, success, result):
         if success:
             return
-        ctx.trigger.run(qt_util.show_message_box_warning, self, format_exception_for_ui(result), "同步状态失败")
+        self.trigger.run(qt_util.show_message_box_warning, self, format_exception_for_ui(result), "同步状态失败")
 
     def _run_sync_selected_server(self):
         def sync_task():
@@ -320,9 +321,9 @@ class ZemRpcWidget(QWidget):
 
         def on_complete(success, result):
             if success:
-                ctx.trigger.run(qt_util.show_message_box_info, self, "开枪成功")
+                self.trigger.run(qt_util.show_message_box_info, self, "开枪成功")
             else:
-                ctx.trigger.run(qt_util.show_message_box_info, self, f"开枪失败: {result}")
+                self.trigger.run(qt_util.show_message_box_info, self, f"开枪失败: {result}")
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_gun_on, gun_task, on_complete))
 
@@ -336,9 +337,9 @@ class ZemRpcWidget(QWidget):
 
         def on_complete(success, result):
             if success:
-                ctx.trigger.run(qt_util.show_message_box_info, self, "关枪成功")
+                self.trigger.run(qt_util.show_message_box_info, self, "关枪成功")
             else:
-                ctx.trigger.run(qt_util.show_message_box_info, self, f"关枪失败: {result}")
+                self.trigger.run(qt_util.show_message_box_info, self, f"关枪失败: {result}")
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_gun_off, gun_off_task, on_complete))
 
@@ -380,9 +381,9 @@ class ZemRpcWidget(QWidget):
 
         def on_complete(success, result):
             if success:
-                ctx.trigger.run(qt_util.show_message_box_info, self, "虚拟ZEM启动成功")
+                self.trigger.run(qt_util.show_message_box_info, self, "虚拟ZEM启动成功")
             else:
-                ctx.trigger.run(qt_util.show_message_box_info, self, f"虚拟ZEM启动失败: {result}")
+                self.trigger.run(qt_util.show_message_box_info, self, f"虚拟ZEM启动失败: {result}")
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_vzem_start, vzem_start_task, on_complete))
 
