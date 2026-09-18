@@ -168,6 +168,11 @@ class ZemRpcWidget(QWidget):
 
     def _init_cbox_sem_servers(self):
         cbox = self.ui.cbox_sem_servers
+        # Windows style 下默认列表行高过小，长的 ip:port 文本会与相邻行重叠。
+        server_view = QListView()
+        server_view.setUniformItemSizes(True)
+        server_view.setStyleSheet("QListView::item { min-height: 20px; }")
+        cbox.setView(server_view)
         with QSignalBlocker(cbox):
             cbox.addItem(ui_utils.DEFAULT_SEM_SERVER_LABEL, ui_utils.DEFAULT_SEM_SERVER_ADDR)
             cbox.setCurrentIndex(0)
