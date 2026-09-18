@@ -22,10 +22,12 @@ import time
 import socket
 import numpy as np
 import threading
+import math
 from concurrent.futures import CancelledError
 from loguru import logger
 from pydantic import Field
 from typing import List, Tuple
+from numbers import Real
 from tenacity import retry, stop_after_attempt, wait_fixed, wait_random, before_sleep_log
 
 from jgb.util import cv_util, req_util, time_util, os_util
@@ -353,15 +355,21 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
     unified interface regardless of the underlying device version.
     """
 
-    def __init__(self, name: str, **kwargs):
+    DEFAULT_TIMEOUT_MULTIPLE = 3
+    LONG_TIMEOUT_THRESHOLD_MS = 10_000
+
+    def __init__(self, name: str, timeout_multiple: Real = DEFAULT_TIMEOUT_MULTIPLE, **kwargs):
         """
         Initialize ZEM RPC device interface.
 
         Args:
             name (str): Device name identifier
+            timeout_multiple (Real): Multiplier applied to all protocol command
+                timeouts. Defaults to 3 for slower network conditions.
             **kwargs: Additional configuration options including parent node
         """
         self.name = name
+        self.set_timeout_multiple(timeout_multiple)
         self.m = ZemModel(ctx=ctx, node_name="zem_rpc_device")
         self.n = ctx.add_node(self, parent=kwargs.pop("parent", None))
 
@@ -382,6 +390,43 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
 
         # device addr -> local IP that successfully reached it during handshake
         self._iface_by_device: dict[Tuple[str, int], str] = {}
+
+    def set_timeout_multiple(self, timeout_multiple: Real):
+        """Set the multiplier applied to protocol command timeouts.
+
+        A value of 1 restores the command timeout declared by ``EnumCmd``.
+        The value must be a finite positive number.
+        """
+        self.timeout_multiple = timeout_multiple
+        return self.timeout_multiple
+
+    def set_timeout_multiplier(self, timeout_multiplier: Real):
+        """Alias for :meth:`set_timeout_multiple`."""
+        return self.set_timeout_multiple(timeout_multiplier)
+
+    @property
+    def timeout_multiple(self):
+        return getattr(self, "_timeout_multiple", ZemRpcDevice.DEFAULT_TIMEOUT_MULTIPLE)
+
+    @timeout_multiple.setter
+    def timeout_multiple(self, timeout_multiple):
+        if isinstance(timeout_multiple, bool) or not isinstance(timeout_multiple, Real) or not math.isfinite(timeout_multiple) or timeout_multiple <= 0:
+            raise ValueError("timeout_multiple must be a finite positive number")
+        self._timeout_multiple = timeout_multiple
+
+    @property
+    def timeout_multiplier(self):
+        """Alias for the configured protocol timeout multiplier."""
+        return self.timeout_multiple
+
+    @timeout_multiplier.setter
+    def timeout_multiplier(self, timeout_multiplier):
+        self.set_timeout_multiple(timeout_multiplier)
+
+    def _scaled_timeout_ms(self, timeout_ms):
+        if timeout_ms >= ZemRpcDevice.LONG_TIMEOUT_THRESHOLD_MS:
+            return timeout_ms
+        return timeout_ms * getattr(self, "timeout_multiple", ZemRpcDevice.DEFAULT_TIMEOUT_MULTIPLE)
 
     def _resolve_local_ip_for_device(self, addr: Tuple[str, int]) -> str:
         if ip_util._is_loopback_ip(addr[0]):
@@ -547,7 +592,8 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
 
         try:
             # 本机方案：广播到不了回环，单独单播探测 127.0.0.1
-            loopback_deadline = time.time() + 0.4
+            timeout_multiple = getattr(self, "timeout_multiple", ZemRpcDevice.DEFAULT_TIMEOUT_MULTIPLE)
+            loopback_deadline = time.time() + 0.4 * timeout_multiple
             all_packets.extend(self._handshake_probe("127.0.0.1", ("127.0.0.1", dest_port), loopback_deadline))
 
             all_ips = ip_util._get_all_local_ips()
@@ -563,7 +609,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
                     resp = self.send(self.build_handshake_request())
                     all_packets.extend(packet for packet in resp if not packet.is_error())
             else:
-                deadline = time.time() + (EnumCmd.Handshake.timeout / 1000)
+                deadline = time.time() + (ZemRpcDevice._scaled_timeout_ms(self, EnumCmd.Handshake.timeout) / 1000)
                 for ip in local_ips:
                     all_packets.extend(self._handshake_probe(ip, ("<broadcast>", dest_port), deadline))
 
@@ -1283,16 +1329,17 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         """
         # Check command permission before sending
         self._check_cmd_permission(req.cmd)
+        timeout_ms = ZemRpcDevice._scaled_timeout_ms(self, req.timeout_ms)
 
         # Choose appropriate PubSub handler based on request type
         if req.cmd == EnumCmd.Handshake:
-            ps = HandshakePubSub(req, timeout=req.timeout_ms)
+            ps = HandshakePubSub(req, timeout=timeout_ms)
         elif req.cmd == EnumCmd.GetNavImg:
-            ps = GetImagePubSub(req, self.m.is_newbee(), timeout=req.timeout_ms)
+            ps = GetImagePubSub(req, self.m.is_newbee(), timeout=timeout_ms)
         elif req.cmd == EnumCmd.Snap:
-            ps = GetImagePubSub(req, self.m.is_newbee(), timeout=req.timeout_ms)
+            ps = GetImagePubSub(req, self.m.is_newbee(), timeout=timeout_ms)
         else:
-            ps = PubSub(req, timeout=req.timeout_ms)
+            ps = PubSub(req, timeout=timeout_ms)
 
         try:
             resp = self.rws.pubsub_send(ps)

@@ -103,6 +103,16 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
             self.sync()
 
     @skip_sync_check
+    def set_timeout_multiple(self, timeout_multiple):
+        """设置协议命令超时倍数，默认值为 3。"""
+        return self.device.set_timeout_multiple(timeout_multiple)
+
+    @skip_sync_check
+    def set_timeout_multiplier(self, timeout_multiplier):
+        """Alias for :meth:`set_timeout_multiple`."""
+        return self.device.set_timeout_multiplier(timeout_multiplier)
+
+    @skip_sync_check
     def sync(self):
         if self._init_sync_ing:
             return

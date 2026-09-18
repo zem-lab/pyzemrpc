@@ -105,6 +105,7 @@ GUI 启动后设备下拉框默认选中 **本机**（`127.0.0.1:61557`）。本
 - 目标为回环时，本地绑定和报文回包地址固定为 `127.0.0.1:<临时端口>`，避免 Windows `WinError 10049`。
 - 扫描在线设备：各网卡广播 + `127.0.0.1` 单播；扫描结束后按当前目标恢复绑定，不改写本机回包地址。
 - 本机服务未开时，同步失败提示：`命令超时，可能电镜服务未开启`。`zem_api.sync()` 失败会重新抛出异常。
+- 协议命令超时默认按 3 倍等待；默认超时达到 10 秒的长命令保持原值。可通过 `zem_api.set_timeout_multiple(1)` 恢复其他命令的原始超时，或设置其他正数倍数。
 - `inv build` 产物：`dist/pyzemrpc-1.2.6.dev2026090902-py3-none-any.whl`。
 - `inv build_exe` 用 Nuitka standalone 编译 `zemrpc/gui/zemrpc_main.py`，输出 `dist/exe/zemrpc_main.dist/pyzemrpc.exe`。该编译依赖 Nuitka 与 MSVC，耗时长；独立 exe 内 `sys.executable` 不是 Python，GUI「启动虚拟 ZEM」子进程不可用。
 
