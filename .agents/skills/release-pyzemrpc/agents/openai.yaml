@@ -1,0 +1,4 @@
+interface:
+  display_name: "发布 pyzemrpc"
+  short_description: "构建、校验并发布 pyzemrpc 到 PyPI 和 devpi"
+  default_prompt: "Use $release-pyzemrpc to bump, validate, and publish a pyzemrpc wheel."
