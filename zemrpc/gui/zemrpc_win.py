@@ -2,9 +2,11 @@
 # -*- coding: utf-8 -*-
 # tr!bf tribf@tribf.com
 
+from pathlib import Path
 from typing import cast
 from loguru import logger
-from qtpy.QtCore import Qt, QSignalBlocker
+from qtpy.QtCore import QUrl, Qt, QSignalBlocker
+from qtpy.QtGui import QDesktopServices
 from qtpy.QtWidgets import QWidget, QListView, QComboBox
 
 from jgb.gui.qt import qt_util
@@ -76,6 +78,7 @@ class ZemRpcWidget(QWidget):
         self.ui.input_mag.returnPressed.connect(self._slot_input_mag_confirmed)
         self.ui.input_field_rotation.returnPressed.connect(self._slot_input_field_rotation_confirmed)
         self.ui.btn_play.clicked.connect(self._slot_btn_play)
+        self.ui.btn_open_image_path.clicked.connect(self._slot_btn_open_image_path)
         self.ui.cbox_cap_avg.currentIndexChanged.connect(self._slot_cbox_cap_avg_txt_changed)
         self.ui.cbox_cap_size.currentIndexChanged.connect(self._slot_cbox_cap_size_txt_changed)
         self.ui.ckb_snap_save.stateChanged.connect(self._slot_ckb_snap_save_state_changed)
@@ -229,6 +232,21 @@ class ZemRpcWidget(QWidget):
         else:
             zem_api.device.video_play_on()
             self.ui.btn_play.setText("暂停")
+
+    def _slot_btn_open_image_path(self):
+        zem_img = zem_api.m.zem_img
+        image_dir = Path(ctx.logdir) / "images"
+        if zem_img is not None and zem_img.pkl is not None:
+            image_dir = Path(zem_img.pkl).parent
+
+        image_dir.mkdir(parents=True, exist_ok=True)
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(image_dir.resolve()))):
+            self.trigger.run(
+                qt_util.show_message_box_warning,
+                self,
+                f"无法打开图像路径: {image_dir}",
+                "打开图像路径失败",
+            )
 
     def _slot_btn_send(self):
         cmd = self.ui.cbox_cmds.currentData()  # type: EnumCmd

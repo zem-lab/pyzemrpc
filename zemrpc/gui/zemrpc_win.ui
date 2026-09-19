@@ -1120,6 +1120,19 @@
            </widget>
           </item>
           <item>
+           <widget class="QPushButton" name="btn_open_image_path">
+            <property name="maximumSize">
+             <size>
+              <width>110</width>
+              <height>16777215</height>
+             </size>
+            </property>
+            <property name="text">
+             <string>打开图像路径</string>
+            </property>
+           </widget>
+          </item>
+          <item>
            <spacer name="horizontalSpacer_3">
             <property name="orientation">
              <enum>Qt::Orientation::Horizontal</enum>
