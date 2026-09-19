@@ -221,7 +221,9 @@ class EnumCmd(Enum):
     IsOpenGun         = "IsOpenGun",                    False, 100,      EnumCmdLevel.BASIC,        "是否打开枪头"
     IsChangingSamp    = "IsChangingSamp",               False, 100,      EnumCmdLevel.BASIC,        "是否正在换样"
     GetSetHV          = "GetSetHV",                     False, 100,      EnumCmdLevel.BASIC,        "获取设置高压"
+    SetCompressA      = "SetCompressA",                 True,  100,      EnumCmdLevel.ADVANCED,     "设置压缩A百分比"
     GetCompressA      = "GetCompressA",                 False, 100,      EnumCmdLevel.BASIC,        "获取压缩A值"
+    SetCompressB      = "SetCompressB",                 True,  100,      EnumCmdLevel.ADVANCED,     "设置压缩B百分比"
     GetCompressB      = "GetCompressB",                 False, 100,      EnumCmdLevel.BASIC,        "获取压缩B值"
     OpenVAC           = "OpenVAC",                      False, 100,      EnumCmdLevel.ADVANCED,     "启动真空"
     ReleaseVAC        = "ReleaseVAC",                   False, 100,      EnumCmdLevel.ADVANCED,     "卸载真空"
@@ -507,7 +509,7 @@ class ProtocolBuilder:
     def build_set_compress_a(self, value: float):
         # value: 0-100 百分比
         value = math_util.clamp(value, 0, 100)
-        return self.build_set(EnumCmd.SetCompressA, f"{value:.2f}")
+        return self.build_set(EnumCmd.SetCompressA, f"{value:.6f}")
 
     def build_get_compress_a(self):
         return self.build_get(EnumCmd.GetCompressA)
@@ -515,7 +517,7 @@ class ProtocolBuilder:
     def build_set_compress_b(self, value: float):
         # value: 0-100 百分比
         value = math_util.clamp(value, 0, 100)
-        return self.build_set(EnumCmd.SetCompressB, f"{value:.2f}")
+        return self.build_set(EnumCmd.SetCompressB, f"{value:.6f}")
 
     def build_get_compress_b(self):
         return self.build_get(EnumCmd.GetCompressB)

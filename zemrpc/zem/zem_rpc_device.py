@@ -260,6 +260,8 @@ class ZemModel(AppTreeNode):
     beam_size: EnumBeamSize = Field(default=EnumBeamSize.Unk, on_setattr=True)
     ob: int = Field(default=0, on_setattr=True)
     wd: float = Field(default=0, on_setattr=True)
+    compress_a: float = Field(default=0.0, on_setattr=True)
+    compress_b: float = Field(default=0.0, on_setattr=True)
 
     hv_info: HvInfo = Field(default=None, on_setattr=True)
     is_open_gun: bool = Field(default=False, on_setattr=True)
@@ -1188,6 +1190,8 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         Returns:
             float: New compression value if successful, None if failed
         """
+        if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value) or not 0 <= value <= 100:
+            raise ValueError("CompressA must be a finite percentage between 0 and 100")
         resp = self.send(self.builder.build_set_compress_a(value))
         if resp.is_ack_ok():
             self.m.compress_a = value
@@ -1215,6 +1219,8 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         Returns:
             float: New compression value if successful, None if failed
         """
+        if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value) or not 0 <= value <= 100:
+            raise ValueError("CompressB must be a finite percentage between 0 and 100")
         resp = self.send(self.builder.build_set_compress_b(value))
         if resp.is_ack_ok():
             self.m.compress_b = value
