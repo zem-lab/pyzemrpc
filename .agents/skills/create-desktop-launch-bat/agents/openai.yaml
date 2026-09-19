@@ -1,0 +1,3 @@
+interface:
+  display_name: "创建 ZEMrpc 桌面启动脚本"
+  short_description: "创建或更新无常驻终端的 ZEMrpc 桌面 BAT"
