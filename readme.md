@@ -82,3 +82,8 @@ print(f"pyzemrpc version: {app_cfg.version}")
 
 ---
 Copyright © 2024-2026 ZEPTOOLS
+
+
+### 海思划区导航扩展（1.2.6.dev2026092001）
+
+`device.set_roi_nav(mag, width, height, [x0,y0,x1,y1], enable_beam_shift=False, view_token=...)` 调用 Instrument UDP `SetRoiNav`。bbox 为 SemLiveStream 对应帧像素边界，当前尺寸 512×512；token 来自新视频帧头，15 秒有效且单次消费。命令内部顺序执行居中与变倍，超时不自动重试，避免重复移动。需配套 2026-09-20 的 Instrument / SemLiveStream 更新。
