@@ -105,7 +105,7 @@ GUI 启动后设备下拉框默认选中 **本机**（`127.0.0.1:61557`）。本
 - 目标为回环时，本地绑定和报文回包地址固定为 `127.0.0.1:<临时端口>`，避免 Windows `WinError 10049`。
 - 扫描在线设备：各网卡广播 + `127.0.0.1` 单播；扫描结束后按当前目标恢复绑定，不改写本机回包地址。
 - 本机服务未开时，同步失败提示：`命令超时，可能电镜服务未开启`。`zem_api.sync()` 失败会重新抛出异常。
-- 协议命令超时默认按 3 倍等待；默认超时达到 10 秒的长命令保持原值。可通过 `zem_api.set_timeout_multiple(1)` 恢复其他命令的原始超时，或设置其他正数倍数。
+- 普通协议命令超时默认按 3 倍等待；默认超时达到 10 秒的长命令保持原值。2026-09-20 起 Handshake 不参与倍率：loopback 探测固定 0.4 秒，广播发现窗口与 fallback 握手使用协议原始超时。可通过 `zem_api.set_timeout_multiple(1)` 恢复其他命令的原始超时，或设置其他正数倍数。
 - `inv build` 产物：`dist/pyzemrpc-1.2.6.dev2026090902-py3-none-any.whl`。
 - `inv build_exe` 用 Nuitka standalone 编译 `zemrpc/gui/zemrpc_main.py`，输出 `dist/exe/zemrpc_main.dist/pyzemrpc.exe`。该编译依赖 Nuitka 与 MSVC，耗时长；独立 exe 内 `sys.executable` 不是 Python，GUI「启动虚拟 ZEM」子进程不可用。
 
@@ -130,3 +130,9 @@ GUI 启动后设备下拉框默认选中 **本机**（`127.0.0.1:61557`）。本
 3. **zemrpc/tools/virtual_zem/** - 虚拟SEM仿真器
    - `virtual_zem.py`: 模拟SEM硬件进行测试
    - `jsonrpc_server.py`: 提供虚拟ZEM的JSON-RPC端点
+
+## 2026-09-20 握手发现超时修复
+
+`set_timeout_multiple()` 继续控制普通短命令，但不再延长网络发现等待。修复覆盖回环单播、多网卡广播窗口和经 `pubsub_send` 的 fallback Handshake。扫描结束后继续恢复当前目标连接；扫描不触发状态测试或设备运动。
+
+回归：`python -m pytest tests/test_timeout_multiplier.py tests/test_loopback_local.py -q`，12 项通过。新增用例使用倍率 30 验证握手仍采用 0.4 秒 loopback 和原始广播时间。此修改为源码提交，未发布新 SDK wheel；调用方需要使用该源码或后续包含修复的发布包。

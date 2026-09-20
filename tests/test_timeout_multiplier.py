@@ -53,3 +53,13 @@ def test_timeout_multiple_must_be_positive_and_finite(timeout_multiple):
 
     with pytest.raises(ValueError):
         device.set_timeout_multiple(timeout_multiple)
+
+
+def test_handshake_timeout_does_not_follow_command_multiplier():
+    from unittest.mock import patch
+    from zemrpc.zem import ip_util
+    deadlines = []
+    device = SimpleNamespace(m=SimpleNamespace(addr=("127.0.0.1", 61557)), timeout_multiple=30, _iface_by_device={}, _prepare_comm=Mock(), _handshake_probe=lambda ip, addr, deadline: deadlines.append(deadline) or [])
+    with patch.object(ip_util, "_get_all_local_ips", return_value=["192.168.1.2"]), patch("zemrpc.zem.zem_rpc_device.time.time", return_value=100):
+        ZemRpcDevice.handshake(device)
+    assert deadlines == [100.4, 100 + EnumCmd.Handshake.timeout / 1000]

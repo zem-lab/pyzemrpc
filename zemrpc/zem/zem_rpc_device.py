@@ -594,8 +594,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
 
         try:
             # 本机方案：广播到不了回环，单独单播探测 127.0.0.1
-            timeout_multiple = getattr(self, "timeout_multiple", ZemRpcDevice.DEFAULT_TIMEOUT_MULTIPLE)
-            loopback_deadline = time.time() + 0.4 * timeout_multiple
+            loopback_deadline = time.time() + 0.4
             all_packets.extend(self._handshake_probe("127.0.0.1", ("127.0.0.1", dest_port), loopback_deadline))
 
             all_ips = ip_util._get_all_local_ips()
@@ -611,7 +610,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
                     resp = self.send(self.build_handshake_request())
                     all_packets.extend(packet for packet in resp if not packet.is_error())
             else:
-                deadline = time.time() + (ZemRpcDevice._scaled_timeout_ms(self, EnumCmd.Handshake.timeout) / 1000)
+                deadline = time.time() + EnumCmd.Handshake.timeout / 1000
                 for ip in local_ips:
                     all_packets.extend(self._handshake_probe(ip, ("<broadcast>", dest_port), deadline))
 
@@ -1335,7 +1334,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         """
         # Check command permission before sending
         self._check_cmd_permission(req.cmd)
-        timeout_ms = ZemRpcDevice._scaled_timeout_ms(self, req.timeout_ms)
+        timeout_ms = req.timeout_ms if req.cmd == EnumCmd.Handshake else ZemRpcDevice._scaled_timeout_ms(self, req.timeout_ms)
 
         # Choose appropriate PubSub handler based on request type
         if req.cmd == EnumCmd.Handshake:
