@@ -49,7 +49,7 @@ from zemrpc.zem import ip_util
 def _retry_pubsub_request(retry_state):
     """Snap has no request ID/deduplication; an ambiguous result is final."""
     request = retry_state.args[1] if len(retry_state.args) > 1 else retry_state.kwargs["req"]
-    return retry_state.outcome.failed and request.cmd != EnumCmd.Snap and not isinstance(retry_state.outcome.exception(), CancelledError)
+    return retry_state.outcome.failed and request.cmd not in {EnumCmd.Snap, EnumCmd.SetRoiNav} and not isinstance(retry_state.outcome.exception(), CancelledError)
 
 
 class HandshakePubSub(PubSub):
@@ -1117,6 +1117,11 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
             self.m.scan_info.rot_degree = degree
             return degree
         return None
+
+    def set_roi_nav(self, mag, width, height, bbox, enable_beam_shift=False, view_token=""):
+        """Execute one frame-bound ROI move. Never replay a timed-out navigation."""
+        resp = self.send(self.builder.build_set_roi_nav(mag, width, height, bbox, enable_beam_shift, view_token))
+        return {"accepted": True} if resp.is_ack_ok() else None
 
     def get_scan_info(self):
         """

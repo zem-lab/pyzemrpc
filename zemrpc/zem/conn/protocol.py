@@ -162,6 +162,7 @@ class EnumCmd(Enum):
     SetOB             = "SetOB",                        True,  100,      EnumCmdLevel.BASIC,        "设置物镜值"
     SetOBRaw          = "SetOBRaw",                     True,  100,      EnumCmdLevel.BASIC,        "直接设置物镜DAC值"
     SetBeamShift      = "SetBeamShift",                 True,  1_000,    EnumCmdLevel.ADVANCED,     "设置样品平面绝对束偏转(um)"
+    SetRoiNav         = "SetRoiNav",                    True,  30_000,   EnumCmdLevel.ADVANCED,     "划区导航：居中并改变倍率"
     GetAST            = "GetAST",                       False, 100,      EnumCmdLevel.BASIC,        "获取像散"
     SetAST            = "SetAST",                       True,  100,      EnumCmdLevel.ADVANCED,     "设置像散"
     GetImgSz          = "GetImgSz",                     False, 100,      EnumCmdLevel.BASIC,        "获取图片尺寸"
@@ -418,6 +419,19 @@ class ProtocolBuilder:
 
     def build_set_beam_shift(self, x_um: float, y_um: float):
         return self.build_set(EnumCmd.SetBeamShift, f"{float(x_um):.6f},{float(y_um):.6f}")
+
+    def build_set_roi_nav(self, mag, width, height, bbox, enable_beam_shift=False, view_token=""):
+        import math
+        values = [float(mag), float(width), float(height), *map(float, bbox)]
+        if len(values) != 7 or not all(math.isfinite(v) for v in values):
+            raise ValueError("ROI values must be finite")
+        m,w,h,x0,y0,x1,y1 = values
+        if m <= 0 or w <= 0 or h <= 0 or not (0 <= x0 < x1 <= w and 0 <= y0 < y1 <= h):
+            raise ValueError("Invalid ROI bounds")
+        if not view_token or any(c not in "0123456789abcdef-" for c in view_token):
+            raise ValueError("A valid live frame token is required")
+        args = ",".join(format(v, ".9g") for v in values) + f",{int(bool(enable_beam_shift))},{view_token}"
+        return self.build_set(EnumCmd.SetRoiNav, args)
 
     def build_set_wd(self, value: float):
         value = math_util.clamp(value, 3, 50)
