@@ -7,6 +7,7 @@ import addict
 import functools
 import numpy as np
 import collections
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Optional, Tuple
@@ -273,6 +274,23 @@ class NavImage(DefaultModel):
         else:
             bgr = self.img
         cv_util.imwrite(nav_img_path, bgr, debug=False)
+
+    def export(self, export_dir: Path) -> tuple[Path, Path]:
+        """Export the navigation image and its optical coefficients."""
+        if self.img is None:
+            raise ValueError("没有可导出的导航图")
+        if self.nav_param is None:
+            raise ValueError("导航图缺少光导系数")
+
+        export_dir = Path(export_dir)
+        export_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.fromtimestamp(self.ctime).strftime("%Y%m%d_%H%M%S_%f")[:-3]
+        image_path = export_dir / f"nav_{timestamp}.png"
+        coefficient_path = image_path.with_suffix(".json")
+
+        self.dump_img(image_path)
+        coefficient_path.write_text(self.nav_param.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        return image_path, coefficient_path
 
     def load_img(self, nav_img_path: Path):
         if not nav_img_path.exists():

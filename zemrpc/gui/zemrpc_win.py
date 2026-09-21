@@ -7,7 +7,7 @@ from typing import cast
 from loguru import logger
 from qtpy.QtCore import QUrl, Qt, QSignalBlocker
 from qtpy.QtGui import QDesktopServices
-from qtpy.QtWidgets import QWidget, QListView, QComboBox
+from qtpy.QtWidgets import QWidget, QListView, QComboBox, QFileDialog
 
 from jgb.gui.qt import qt_util
 from jgb.gui.qt.dds_util import Attrs2QtValue
@@ -99,6 +99,7 @@ class ZemRpcWidget(QWidget):
 
         # 导航图
         self.ui.btn_get_nav_info.clicked.connect(self._slot_btn_get_nav_info)
+        self.ui.btn_export_nav_img.clicked.connect(self._slot_btn_export_nav_img)
 
         ## 虚拟zem
         self.ui.btn_vzem_start.clicked.connect(self._slot_btn_vzem_start)
@@ -395,6 +396,30 @@ class ZemRpcWidget(QWidget):
             return True, None
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_get_nav_info, get_nav_info))
+
+    def _slot_btn_export_nav_img(self):
+        nav_img = zem_api.m.nav_img
+        if nav_img is None or nav_img.img is None:
+            self.trigger.run(qt_util.show_message_box_warning, self, "请先获取导航图", "导出导航图")
+            return
+
+        export_dir = QFileDialog.getExistingDirectory(self, "选择导航图导出目录", str(Path.home()))
+        if not export_dir:
+            return
+
+        try:
+            image_path, coefficient_path = nav_img.export(Path(export_dir))
+        except Exception as exc:
+            logger.exception("导出导航图失败")
+            self.trigger.run(qt_util.show_message_box_warning, self, format_exception_for_ui(exc), "导出导航图失败")
+            return
+
+        self.trigger.run(
+            qt_util.show_message_box_info,
+            self,
+            f"已导出:\n{image_path.name}\n{coefficient_path.name}\n\n目录: {image_path.parent}",
+            "导出导航图成功",
+        )
 
     def _slot_btn_vzem_start(self):
         def vzem_start_task():
