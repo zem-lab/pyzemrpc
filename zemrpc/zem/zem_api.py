@@ -163,6 +163,21 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
             time.sleep(wait_stable_ms / 1000)
         return ret
 
+    def get_imaging_mode(self):
+        return self.device.get_imaging_mode()
+
+    def set_imaging_mode(self, mode):
+        return self.device.set_imaging_mode(mode)
+
+    def get_fisheye_focus(self):
+        return self.device.get_fisheye_focus()
+
+    def set_fisheye_focus(self, value: int, wait_stable_ms=0):
+        ret = self.device.set_fisheye_focus(value)
+        if ret is not None and wait_stable_ms:
+            time.sleep(wait_stable_ms / 1000)
+        return ret
+
     def set_ob_raw(self, ob: int, wait_stable_ms=0):
         """Write the exact unsigned 16-bit OB DAC value without WD conversion."""
         ret = self.device.set_ob_raw(ob)

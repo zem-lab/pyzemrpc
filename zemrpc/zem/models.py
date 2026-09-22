@@ -8,7 +8,7 @@ import functools
 import numpy as np
 import collections
 from datetime import datetime
-from enum import Enum
+from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Optional, Tuple
 from functools import cached_property
@@ -23,6 +23,12 @@ from zemrpc.zem.zem_image_processor import normalize_with_drop
 
 XY = collections.namedtuple("XY", ["x", "y"])
 Bounds = collections.namedtuple("Bounds", ["xmin", "ymin", "xmax", "ymax"])
+
+
+class EnumImagingMode(IntEnum):
+    Normal = 0
+    LargeField = 1  # Reserved by Instrument; switching is not implemented.
+    Fisheye = 2
 
 
 class NavParam(DefaultModel):

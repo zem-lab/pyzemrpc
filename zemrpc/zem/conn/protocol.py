@@ -18,7 +18,7 @@ from jgb.util import math_util, json_util
 from jgb.util.enum_util import EnumWithCode
 from jgb.conn.pubsub import BaseRequest, BaseResponse
 
-from zemrpc.zem.models import NavParam, StagePos, ScanInfo, HvInfo, EnumImageSize, EnumBeamSize, BseInfo, BseQuadrant, EnumBsePhase, EnumCmdLevel
+from zemrpc.zem.models import NavParam, StagePos, ScanInfo, HvInfo, EnumImageSize, EnumBeamSize, BseInfo, BseQuadrant, EnumBsePhase, EnumCmdLevel, EnumImagingMode
 
 
 # fmt: off
@@ -161,6 +161,10 @@ class EnumCmd(Enum):
     GetOB             = "GetOB",                        False, 100,      EnumCmdLevel.BASIC,        "获取物镜值"
     SetOB             = "SetOB",                        True,  100,      EnumCmdLevel.BASIC,        "设置物镜值"
     SetOBRaw          = "SetOBRaw",                     True,  100,      EnumCmdLevel.BASIC,        "直接设置物镜DAC值"
+    GetImagingMode    = "GetImagingMode",               False, 100,      EnumCmdLevel.BASIC,        "获取成像模式"
+    SetImagingMode    = "SetImagingMode",               True,  3_000,    EnumCmdLevel.BASIC,        "切换正常/鱼眼成像模式"
+    GetFisheyeFocus   = "GetFisheyeFocus",              False, 100,      EnumCmdLevel.BASIC,        "获取鱼眼对焦手柄值"
+    SetFisheyeFocus   = "SetFisheyeFocus",              True,  100,      EnumCmdLevel.BASIC,        "设置鱼眼对焦手柄值(0-65535)"
     SetBeamShift      = "SetBeamShift",                 True,  1_000,    EnumCmdLevel.ADVANCED,     "设置样品平面绝对束偏转(um)"
     SetRoiNav         = "SetRoiNav",                    True,  30_000,   EnumCmdLevel.ADVANCED,     "划区导航：居中并改变倍率"
     GetAST            = "GetAST",                       False, 100,      EnumCmdLevel.BASIC,        "获取像散"
@@ -400,6 +404,22 @@ class ProtocolBuilder:
 
     def build_get_ob(self):
         return self.build_get(EnumCmd.GetOB)
+
+    def build_get_imaging_mode(self):
+        return self.build_get(EnumCmd.GetImagingMode)
+
+    def build_set_imaging_mode(self, mode: EnumImagingMode | int):
+        if isinstance(mode, bool) or not isinstance(mode, Integral) or mode not in (EnumImagingMode.Normal, EnumImagingMode.Fisheye):
+            raise ValueError("Imaging mode must be Normal (0) or Fisheye (2)")
+        return self.build_set(EnumCmd.SetImagingMode, str(int(mode)))
+
+    def build_get_fisheye_focus(self):
+        return self.build_get(EnumCmd.GetFisheyeFocus)
+
+    def build_set_fisheye_focus(self, value: int):
+        if isinstance(value, bool) or not isinstance(value, Integral) or not 0 <= value <= 65535:
+            raise ValueError("Fisheye focus must be an integer in [0, 65535]")
+        return self.build_set(EnumCmd.SetFisheyeFocus, str(int(value)))
 
     def build_set_ob(self, value: int):
         """Build an exact raw OB command; kept as the canonical Python API name."""
@@ -755,6 +775,15 @@ class RespPacket(BaseResponse):
 
     def parse_ob(self) -> int:
         return int(self._parse_1())
+
+    def parse_imaging_mode(self) -> EnumImagingMode:
+        return EnumImagingMode(int(self._parse_1()))
+
+    def parse_fisheye_focus(self) -> int:
+        value = int(self._parse_1())
+        if not 0 <= value <= 65535:
+            raise ValueError("Invalid fisheye focus readback")
+        return value
 
     def parse_mag(self) -> float:
         return float(self._parse_1())

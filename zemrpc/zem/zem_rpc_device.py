@@ -1059,6 +1059,28 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         self.m.ob = resp.parse_ob()
         return self.m.ob
 
+    def get_imaging_mode(self):
+        """Read Instrument's mode; never infer it from an objective value."""
+        return self.send(self.builder.build_get_imaging_mode()).parse_imaging_mode()
+
+    def set_imaging_mode(self, mode):
+        """Switch Normal (0) / Fisheye (2); Instrument owns optical restoration."""
+        resp = self.send(self.builder.build_set_imaging_mode(mode))
+        return self.get_imaging_mode() if resp.is_ack_ok() else None
+
+    def get_fisheye_focus(self):
+        """Read the 0..65535 focus handle; valid only in fisheye mode."""
+        return self.send(self.builder.build_get_fisheye_focus()).parse_fisheye_focus()
+
+    def set_fisheye_focus(self, value: int):
+        """Set a focus handle, not OB DAC or compression percentage.
+
+        Instrument maps it to its configured compression lens A/B and DAC range.
+        A request in normal mode is rejected by the device.
+        """
+        resp = self.send(self.builder.build_set_fisheye_focus(value))
+        return self.get_fisheye_focus() if resp.is_ack_ok() else None
+
     def set_ob(self, ob: int):
         """
         Set objective lens value.
