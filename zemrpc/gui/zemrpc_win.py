@@ -3,7 +3,6 @@
 # tr!bf tribf@tribf.com
 
 from pathlib import Path
-from threading import RLock
 from typing import cast
 from loguru import logger
 from qtpy.QtCore import QUrl, Qt, QSignalBlocker
@@ -48,9 +47,7 @@ class ZemRpcWidget(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
         self.trigger = QTrigger(True)
-        self._optics_lock = RLock()
-        self._optics_busy = False
-        self._imaging_mode = None
+        self._fisheye_busy = False
 
         self.ui = Ui_Form()
         self.ui.setupUi(self)
@@ -61,7 +58,7 @@ class ZemRpcWidget(QWidget):
 
         self.init_ui()
         self.init_ss()
-        self._update_optics_controls()
+        self._update_fisheye_controls()
 
     def init_ss(self):
         # 连接
@@ -283,23 +280,14 @@ class ZemRpcWidget(QWidget):
 
     def _on_sync_complete(self, success, result):
         if success:
-            self.trigger.run(self._slot_imaging_mode_read)
             return
         self.trigger.run(qt_util.show_message_box_warning, self, format_exception_for_ui(result), "同步状态失败")
 
     def _run_sync_selected_server(self):
-        if self._optics_busy:
-            return
-        self._imaging_mode = None
-        self.ui.lbl_imaging_mode.setText("模式：未读取")
-        self.ui.lbl_fisheye_result.setText("设备同步中，完成后读取成像模式。")
-        self._update_optics_controls()
-
         def sync_task():
-            with self._optics_lock:
-                if not self._apply_selected_sem_server():
-                    zem_api._init_sync_done = False
-                    zem_api.sync()
+            if not self._apply_selected_sem_server():
+                zem_api._init_sync_done = False
+                zem_api.sync()
 
         ctx.async_executor.run(
             QPushButtonClicked(self.ui.btn_zem_sync, sync_task, self._on_sync_complete, loading_text="同步中...")
@@ -326,12 +314,8 @@ class ZemRpcWidget(QWidget):
         zem_api.m.snap_args.save = state == Qt.CheckState.Checked.value
 
     def _on_slider_ob_value_changed(self, value: float):
-        if self._optics_busy or self._imaging_mode != EnumImagingMode.Normal:
-            return
-
         def handler(ob):
-            with self._optics_lock, ctx.signal_blocker(zem_api.device.m, "ob"):
-                self._require_normal_imaging_mode()
+            with ctx.signal_blocker(zem_api.device.m, "ob"):
                 zem_api.set_ob(int(ob))
 
         rh = RecursivelyHandler(self.ui.slider_ob, handler)
@@ -345,64 +329,44 @@ class ZemRpcWidget(QWidget):
 
     def _slot_btn_af(self):
         def af_task():
-            with self._optics_lock:
-                self._require_normal_imaging_mode()
-                zem_api.run_autofocus()
+            zem_api.run_autofocus()
 
         ctx.async_executor.run(QPushButtonClicked(self.ui.btn_af, af_task))
 
-    def _require_normal_imaging_mode(self):
-        if zem_api.device.get_imaging_mode() != EnumImagingMode.Normal:
-            self.trigger.run(self._slot_imaging_mode_read)
-            raise ValueError("电镜已离开正常模式，请在鱼眼页使用专用调焦指令")
-
-    def _update_optics_controls(self):
-        idle = not self._optics_busy
-        for widget in (self.ui.btn_imaging_mode_read, self.ui.btn_fisheye_enter, self.ui.btn_fisheye_exit, self.ui.cbox_sem_servers, self.ui.btn_zem_sync):
+    def _update_fisheye_controls(self):
+        # 只控制本页请求状态；连接和物镜对焦不依赖鱼眼能力。
+        idle = not self._fisheye_busy
+        for widget in (self.ui.btn_imaging_mode_read, self.ui.btn_fisheye_enter, self.ui.btn_fisheye_exit, self.ui.panel_fisheye_focus):
             widget.setEnabled(idle)
-        self.ui.panel_fisheye_focus.setEnabled(idle and self._imaging_mode == EnumImagingMode.Fisheye)
-        for widget in (self.ui.slider_ob, self.ui.btn_ob, self.ui.btn_af):
-            widget.setEnabled(idle and self._imaging_mode == EnumImagingMode.Normal)
 
     def _read_imaging_state(self):
         device = zem_api.device
         mode = device.get_imaging_mode()
         focus = device.get_fisheye_focus() if mode == EnumImagingMode.Fisheye else None
-        if mode == EnumImagingMode.Normal:
-            device.get_ob()
         mag = device.get_mag()
         device.get_scan_info()
-        if device.get_imaging_mode() != mode:
-            raise ValueError("读回期间成像模式改变，请重新读取")
         return {"mode": mode, "focus": focus, "mag": mag}
 
-    def _run_optics_task(self, description, operation):
-        if self._optics_busy:
+    def _run_fisheye_task(self, description, operation):
+        if self._fisheye_busy:
             return
-        self._optics_busy = True
-        self._update_optics_controls()
+        self._fisheye_busy = True
+        self._update_fisheye_controls()
         self.ui.lbl_fisheye_result.setText(description + "…")
         self.ui.lbl_fisheye_result.setToolTip("")
-        address = zem_api.device.m.addr
-
-        def task():
-            with self._optics_lock:
-                if zem_api.device.m.addr != address:
-                    raise ValueError("连接设备已改变，请重新读取模式")
-                return operation()
 
         def complete(success, result):
-            self.trigger.run(self._on_optics_complete, description, success, result)
+            self.trigger.run(self._on_fisheye_complete, description, success, result)
 
-        work = AsyncTask(task_func=task, on_complete=complete)
+        work = AsyncTask(task_func=operation, on_complete=complete)
         work.task_id = id(self.ui.tab_fisheye)
         ctx.async_executor.run(work)
 
-    def _on_optics_complete(self, description, success, result):
-        self._optics_busy = False
+    def _on_fisheye_complete(self, description, success, result):
+        self._fisheye_busy = False
         if success:
-            self._imaging_mode = result["mode"]
-            name = {EnumImagingMode.Normal: "正常", EnumImagingMode.Fisheye: "鱼眼", EnumImagingMode.LargeField: "大场"}[self._imaging_mode]
+            mode = result["mode"]
+            name = {EnumImagingMode.Normal: "正常", EnumImagingMode.Fisheye: "鱼眼", EnumImagingMode.LargeField: "大场"}[mode]
             self.ui.lbl_imaging_mode.setText(f"模式：{name}")
             focus = result["focus"]
             if focus is not None:
@@ -411,19 +375,18 @@ class ZemRpcWidget(QWidget):
             message = f"{description}成功 · 倍率 {result['mag']:g}×"
             if focus is not None:
                 message += f" · 鱼眼焦点 {focus}"
-            elif self._imaging_mode == EnumImagingMode.Normal:
+            elif mode == EnumImagingMode.Normal:
                 message += " · 可使用物镜调焦"
         else:
-            self._imaging_mode = None
             self.ui.lbl_imaging_mode.setText("模式：待读取")
             message = f"{description}失败：{format_exception_for_ui(result)}"
             logger.warning(message)
         self.ui.lbl_fisheye_result.setText(message)
         self.ui.lbl_fisheye_result.setToolTip(message)
-        self._update_optics_controls()
+        self._update_fisheye_controls()
 
     def _slot_imaging_mode_read(self):
-        self._run_optics_task("读取模式/焦点", self._read_imaging_state)
+        self._run_fisheye_task("读取模式/焦点", self._read_imaging_state)
 
     def _slot_imaging_mode_set(self, mode):
         def operation():
@@ -431,7 +394,7 @@ class ZemRpcWidget(QWidget):
                 raise ValueError("设备未确认模式切换，请检查电镜鱼眼插件")
             return self._read_imaging_state()
 
-        self._run_optics_task("进入鱼眼" if mode == EnumImagingMode.Fisheye else "恢复正常", operation)
+        self._run_fisheye_task("进入鱼眼" if mode == EnumImagingMode.Fisheye else "恢复正常", operation)
 
     def _slot_fisheye_focus_set(self, delta=None):
         # clicked(bool) 的 checked 参数不作为步进值。
@@ -441,15 +404,13 @@ class ZemRpcWidget(QWidget):
 
         def operation():
             device = zem_api.device
-            if device.get_imaging_mode() != EnumImagingMode.Fisheye:
-                raise ValueError("当前不是鱼眼模式，请重新读取模式")
             target = value if delta is None else max(0, min(65535, device.get_fisheye_focus() + delta))
             actual = device.set_fisheye_focus(target)
             if actual is None or actual != target:
                 raise ValueError(f"鱼眼调焦读回不符：请求 {target}，读回 {actual}")
             return self._read_imaging_state()
 
-        self._run_optics_task("设置鱼眼焦点", operation)
+        self._run_fisheye_task("设置鱼眼焦点", operation)
 
     def _slot_btn_zem_sync(self):
         self._run_sync_selected_server()
