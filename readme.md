@@ -85,3 +85,7 @@ print(f"pyzemrpc version: {app_cfg.version}")
 ---
 Copyright © 2024-2026 ZEPTOOLS
 
+
+### 2026-09-23 手动实时图导航
+
+`pyzemrpc 1.2.6.dev2026092302` 提供 `device.set_roi_nav(width, height, bbox)`，UDP 为 `SetRoiNav:width,height,x0,y0,x1,y1`。两角相同只居中，矩形居中并按长边放大；电镜软件使用当前光学参数自动选择束移或移台，无需 frame token、客户端倍率或束移开关。六参数替换旧九参数接口，需同步更新 Instrument；旧视频模块仍可使用。导航超时不自动重试，accepted 表示命令接受。手动倍率仍发送 SetMag。

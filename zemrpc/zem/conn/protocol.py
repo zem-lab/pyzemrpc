@@ -440,17 +440,16 @@ class ProtocolBuilder:
     def build_set_beam_shift(self, x_um: float, y_um: float):
         return self.build_set(EnumCmd.SetBeamShift, f"{float(x_um):.6f},{float(y_um):.6f}")
 
-    def build_set_roi_nav(self, mag, width, height, bbox, enable_beam_shift=False, view_token=""):
+    def build_set_roi_nav(self, width, height, bbox):
         import math
-        values = [float(mag), float(width), float(height), *map(float, bbox)]
-        if len(values) != 7 or not all(math.isfinite(v) for v in values):
+        values = [float(width), float(height), *map(float, bbox)]
+        if len(values) != 6 or not all(math.isfinite(v) for v in values):
             raise ValueError("ROI values must be finite")
-        m,w,h,x0,y0,x1,y1 = values
-        if m <= 0 or w <= 0 or h <= 0 or not (0 <= x0 < x1 <= w and 0 <= y0 < y1 <= h):
+        w,h,x0,y0,x1,y1 = values
+        point = x0 == x1 and y0 == y1
+        if w <= 0 or h <= 0 or not (0 <= x0 <= x1 <= w and 0 <= y0 <= y1 <= h) or (not point and (x0 == x1 or y0 == y1)):
             raise ValueError("Invalid ROI bounds")
-        if not view_token or any(c not in "0123456789abcdef-" for c in view_token):
-            raise ValueError("A valid live frame token is required")
-        args = ",".join(format(v, ".9g") for v in values) + f",{int(bool(enable_beam_shift))},{view_token}"
+        args = ",".join(format(v, ".9g") for v in values)
         return self.build_set(EnumCmd.SetRoiNav, args)
 
     def build_set_wd(self, value: float):

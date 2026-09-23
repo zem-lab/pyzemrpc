@@ -1140,9 +1140,13 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
             return degree
         return None
 
-    def set_roi_nav(self, mag, width, height, bbox, enable_beam_shift=False, view_token=""):
-        """Execute one frame-bound ROI move. Never replay a timed-out navigation."""
-        resp = self.send(self.builder.build_set_roi_nav(mag, width, height, bbox, enable_beam_shift, view_token))
+    def set_roi_nav(self, width, height, bbox):
+        """Center a point/box using Shell's current optics and stage/beam choice.
+
+        Equal corners center a point without changing magnification. A box
+        also zooms to its longer side. Never replay a timed-out navigation.
+        """
+        resp = self.send(self.builder.build_set_roi_nav(width, height, bbox))
         return {"accepted": True} if resp.is_ack_ok() else None
 
     def get_scan_info(self):
