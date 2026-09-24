@@ -205,13 +205,16 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
         self.m.field_with_loc(self.device.m.scan_info, self.device.m.stage_pos)
         return pos
 
-    @retry(reraise=True, stop=stop_after_attempt(3), wait=wait_fixed(1) + wait_random(0, 1))
     def stage_xy_goto_closed(self, xy, stable_after_idle_ms=0):
-        self.stage_xy_goto(xy)
-        self.device.ensure_stage_idle()
+        target = self.stage_xy_goto(xy)
+        if target is None:
+            raise ZemException("样品台定位指令未被接受", ZemException.Code.ReqError)
+        observed = self.device.ensure_stage_idle(target=target)
+        self.m.field_with_loc(self.device.m.scan_info, observed)
         if stable_after_idle_ms:
             logger.debug(f"force sleep stable_after_idle_ms: {stable_after_idle_ms}ms")
             time.sleep(stable_after_idle_ms / 1000)
+        return observed
 
     def move_then_cap(self, xy, stable_after_idle_ms=0, png=None, **kwargs) -> ZemImage:
         self.stage_xy_goto_closed(xy, stable_after_idle_ms)

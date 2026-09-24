@@ -47,9 +47,9 @@ from zemrpc.zem import ip_util
 
 
 def _retry_pubsub_request(retry_state):
-    """Snap has no request ID/deduplication; an ambiguous result is final."""
+    """Acquisition/navigation writes have no request ID; never replay an ambiguous result."""
     request = retry_state.args[1] if len(retry_state.args) > 1 else retry_state.kwargs["req"]
-    return retry_state.outcome.failed and request.cmd not in {EnumCmd.Snap, EnumCmd.SetRoiNav} and not isinstance(retry_state.outcome.exception(), CancelledError)
+    return retry_state.outcome.failed and request.cmd not in {EnumCmd.Snap, EnumCmd.SetRoiNav, EnumCmd.SetStagePos} and not isinstance(retry_state.outcome.exception(), CancelledError)
 
 
 class HandshakePubSub(PubSub):
@@ -785,16 +785,19 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
             pos (StagePos): Target position coordinates
 
         Returns:
-            StagePos: New position if successful, None if failed
+            StagePos: Accepted target in micrometers, None if rejected. Not readback.
         """
-        # Convert micrometers to pulses for older devices
+        if not all(math.isfinite(v) for v in (pos.x, pos.y)):
+            raise ValueError("Stage target must be finite")
+        # Keep command intent separate from measured position and caller-owned data.
+        target = StagePos(x=pos.x, y=pos.y)
+        x, y = target.x, target.y
         if self.m.is_stage_pos_unit_pulse():
-            pos.x, pos.y = round(pos.x * zu.zem15_um2pulse), round(pos.y * zu.zem15_um2pulse)
+            x, y = round(x * zu.zem15_um2pulse), round(y * zu.zem15_um2pulse)
 
-        resp = self.send(self.builder.build_set_stage_pos(pos.x, pos.y))
+        resp = self.send(self.builder.build_set_stage_pos(x, y))
         if resp.is_ack_ok():
-            self.m.stage_pos = pos
-            return pos
+            return target
         return None
 
     def check_status(self) -> RespPacket:
@@ -834,24 +837,46 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         resp = self.send(self.builder.build_get_stage_status())
         return resp.parse_stage_status()
 
-    def ensure_stage_idle(self, timeout=30):
-        """
-        Wait for stage to stop moving and become idle.
+    def ensure_stage_idle(self, timeout=30, *, target=None, tolerance_um=3.0, settle_s=1.0, poll_s=0.25):
+        """Wait for idle and stable readback, optionally at a target in micrometers.
 
-        Args:
-            timeout (int): Maximum wait time in seconds
-
-        Raises:
-            ZemException: If timeout is reached before stage becomes idle
+        The deadline includes polling and settling. Each RPC also has its own
+        transport timeout. Old Shells expose cached samples without sequence IDs;
+        stable readback is a fallback, not proof of hardware sample freshness.
+        Returns the measured StagePos in the device's existing readback units.
         """
-        time.sleep(0.5)  # Initial delay to allow movement to start
-        st = time.time()
-        status = self.get_stage_status()
-        while status != EnumStageStatus.Idle:
-            time.sleep(1)
+        if not all(math.isfinite(v) for v in (timeout, tolerance_um, settle_s, poll_s)) or timeout <= 0 or tolerance_um < 0 or settle_s <= 0 or poll_s <= 0:
+            raise ValueError("Invalid stage wait bounds")
+        scale = zu.zem15_um2pulse if self.m.is_stage_pos_unit_pulse() else 1.0
+        target_xy = None if target is None else (float(target.x) * scale, float(target.y) * scale)
+        if target_xy is not None and not all(math.isfinite(v) for v in target_xy):
+            raise ValueError("Stage target must be finite")
+        tolerance = tolerance_um * scale
+        deadline = time.monotonic() + timeout
+        stable_since, anchor = None, None
+        observed, status = None, None
+        while time.monotonic() < deadline:
             status = self.get_stage_status()
-            if timeout < time.time() - st:
-                raise ZemException("等待样品台脱机超时", ZemException.Code.SvrError)
+            observed = self.get_stage_pos()
+            now = time.monotonic()
+            if now >= deadline:
+                break
+            xy = None if observed is None else (observed.x, observed.y)
+            valid = xy is not None and all(math.isfinite(v) for v in xy)
+            arrived = valid and (target_xy is None or all(abs(a-b) <= tolerance for a, b in zip(xy, target_xy)))
+            if status == EnumStageStatus.Idle and arrived:
+                if anchor is None or any(abs(a-b) > tolerance for a, b in zip(xy, anchor)):
+                    stable_since, anchor = now, xy
+                elif now - stable_since >= settle_s:
+                    return observed
+            else:
+                stable_since, anchor = None, None
+            time.sleep(min(poll_s, max(0.0, deadline-time.monotonic())))
+        error = ZemException(f"等待样品台到位超时：目标={target_xy}，读回={observed}，状态={status}，容差={tolerance_um} μm；未重发移台指令", ZemException.Code.SvrError)
+        error.stage_wait_details = {"target_um": None if target is None else {"x_um": target.x, "y_um": target.y},
+                                    "observed": None if observed is None else {"x": observed.x, "y": observed.y},
+                                    "status": None if status is None else status.name, "timeout_s": timeout, "tolerance_um": tolerance_um}
+        raise error
 
     def get_hv_status(self):
         """
@@ -1388,7 +1413,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         # Check for errors in non-handshake, non-RPC responses
         if req.cmd != EnumCmd.Handshake and req.cmd != EnumCmd.ZemRpc:
             if resp.is_error() or resp.is_invalid_cmd():
-                raise ZemException.request_error("")
+                raise ZemException.request_error(f"{req.cmd.name}: {resp.data_str}")
         return resp
 
     def send_cmd(self, cmd: EnumCmd, args: str = None):
