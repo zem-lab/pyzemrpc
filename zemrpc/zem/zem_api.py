@@ -412,13 +412,12 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
 
         img = resp.parse_image()
         meta = self.device.m.to_img_meta(snap_args)
-        meta.bounds = resp.parse_img_bounds()
+        meta.update(resp.parse_img_meta(img.shape))
 
         if not kwargs.get("raw", False):
             img = self.img_processor_mgr(img)
 
         zem_img = ZemImage(img=img, meta=meta)
-        # TODO meta中加入rpc结果
         return zem_img
 
     @skip_sync_check

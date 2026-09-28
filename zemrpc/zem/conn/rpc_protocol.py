@@ -2,12 +2,22 @@
 # -*- coding: utf-8 -*-
 # tr!bf tribf@tribf.com
 
+import copy
+import math
 from pydantic import Field
 
 from jgb.util import cv_util, idx_util
 from jgb.util.pydantic_util import DefaultModel
 
-from zemrpc.zem.models import Bounds
+from zemrpc.zem.models import Bounds, MetaItem, StagePos, valid_image_bounds
+
+
+def _finite_number(value):
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError):
+        return None
 
 
 class Req(DefaultModel):
@@ -38,24 +48,50 @@ class RpcSnapResp(RpcResp):
         return img
 
     def parse_img_bounds(self):
-        x = self.result["meta"]["zem"]["Stage"]["x"]
-        y = self.result["meta"]["zem"]["Stage"]["y"]
-        scan_um_width = self.result["meta"]["zem"]["imaging"]["ScanWidth"]
-        scan_um_height = self.result["meta"]["zem"]["imaging"]["ScanHeight"]
-        rot_degree = self.result["meta"]["zem"]["imaging"]["Rotation"]
-
-        if isinstance(x, str) and x.lower() == "nan":
-            x = 0
-
-        if isinstance(y, str) and y.lower() == "nan":
-            y = 0
+        zem = self.result.get("meta", {}).get("zem", {})
+        stage, imaging = zem.get("Stage", {}), zem.get("imaging", {})
+        x, y = (_finite_number(stage.get(axis)) for axis in ("x", "y"))
+        scan_um_width = _finite_number(imaging.get("ScanWidth"))
+        scan_um_height = _finite_number(imaging.get("ScanHeight"))
+        if None in (x, y, scan_um_width, scan_um_height) or scan_um_width <= 0 or scan_um_height <= 0:
+            return None
 
         xmin = x - scan_um_width / 2
         xmax = x + scan_um_width / 2
         ymin = y - scan_um_height / 2
         ymax = y + scan_um_height / 2
 
-        return Bounds(xmin, ymin, xmax, ymax)
+        bounds = Bounds(xmin, ymin, xmax, ymax)
+        return bounds if valid_image_bounds(bounds) else None
+
+    def parse_img_meta(self, image_shape):
+        """Use this capture's snapshot, including an explicitly unknown field."""
+        snapshot = self.result.get("meta", {})
+        zem = snapshot.get("zem", {})
+        imaging, stage = zem.get("imaging", {}), zem.get("Stage", {})
+        optics, hv = zem.get("ob", {}), zem.get("Hv", {})
+        width, height = (_finite_number(imaging.get(k)) for k in ("ScanWidth", "ScanHeight"))
+        calibrated = width is not None and height is not None and width > 0 and height > 0
+        x, y = (_finite_number(stage.get(k)) for k in ("x", "y"))
+        voltage = _finite_number(hv.get("RealAccVol"))
+        return {
+            MetaItem.Model: zem.get("Model"),
+            MetaItem.Detector: imaging.get("Detector"),
+            MetaItem.Magnification: _finite_number(imaging.get("Magnification")),
+            MetaItem.AccVoltage: voltage,
+            MetaItem.KV: None if voltage is None else voltage / 1000,
+            MetaItem.OB: _finite_number(optics.get("ob")),
+            MetaItem.WD: _finite_number(optics.get("wd")),
+            MetaItem.Position: None if x is None or y is None else StagePos(x=x, y=y),
+            MetaItem.FieldRotation: _finite_number(imaging.get("Rotation")),
+            MetaItem.FieldSize: width if calibrated else 0.0,
+            MetaItem.PixelSize: width / image_shape[1] if calibrated else 0.0,
+            "pixel_size_y_um": height / image_shape[0] if calibrated else 0.0,
+            "bounds": self.parse_img_bounds(),
+            "field_size_available": calibrated,
+            "metadata_source": "jsonrpc_capture",
+            "rpc_meta": copy.deepcopy(snapshot),
+        }
 
 
 class Status(Req):

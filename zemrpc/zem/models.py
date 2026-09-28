@@ -5,6 +5,7 @@
 import cv2
 import addict
 import functools
+import math
 import numpy as np
 import collections
 from datetime import datetime
@@ -23,6 +24,15 @@ from zemrpc.zem.zem_image_processor import normalize_with_drop
 
 XY = collections.namedtuple("XY", ["x", "y"])
 Bounds = collections.namedtuple("Bounds", ["xmin", "ymin", "xmax", "ymax"])
+
+
+def valid_image_bounds(bounds):
+    """A physical image extent requires a finite position and positive field size."""
+    try:
+        xmin, ymin, xmax, ymax = bounds
+        return all(math.isfinite(v) for v in bounds) and xmax > xmin and ymax > ymin
+    except (TypeError, ValueError):
+        return False
 
 
 class EnumImagingMode(IntEnum):
@@ -244,7 +254,7 @@ class ZemImage(DefaultModel):
 
     def calc_stage_xy(self, px, py):
         pixel_size = self.pixel_size
-        if pixel_size is None:
+        if pixel_size is None or not math.isfinite(pixel_size) or pixel_size <= 0 or not valid_image_bounds(self.bounds):
             return None
 
         pos = self.meta.get(MetaItem.Position, None)
