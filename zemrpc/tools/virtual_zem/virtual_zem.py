@@ -19,6 +19,7 @@ from functools import cached_property
 from jgb.util import cv_util, file_util, json_util
 
 from zemrpc import app_cfg
+from zemrpc.zem.scan_relay import validate_scan_relay_mask
 from zemrpc.zem.conn.protocol import (
     EnumAutofocusStatus,
     EnumCmd,
@@ -253,6 +254,7 @@ class VirtualZem:
         # self.screen_size = 250  # mm
         self.screen_size = (2.54 * 5) * 10  # 5英寸底片倍率
         self.mag = 500
+        self.scan_relay_mask = 15
         self.ob = 30000
         self.wd = 11
         self.beam_size = EnumBeamSize.Coarse
@@ -302,6 +304,7 @@ class VirtualZem:
         return {
             "Model": "Zem15C",
             "State": state,
+            "scan_relay_mask": self.scan_relay_mask,
             "Hv": {
                 "RealAccVol": self.acc_v if self.is_gun_open else 0,
                 "EmissCur": 0.3128,
@@ -1067,6 +1070,16 @@ class RemoteZem(threading.Thread):
                 self._send(packet.addr, self.builder.build_status_check(EnumStatus.Idle))
         elif cmd == EnumCmd.GetMag:
             self._send(packet.addr, self.builder.build_get_mag(self.zem_dev.mag))
+        elif cmd == EnumCmd.GetScanRelayMask:
+            self._send(packet.addr, self.builder.build_set(cmd, str(self.zem_dev.scan_relay_mask)))
+        elif cmd == EnumCmd.SetScanRelayMask:
+            try:
+                mask = validate_scan_relay_mask(int(packet._parse_1()))
+            except (ValueError, IndexError):
+                self._send(packet.addr, self.builder.build_set(cmd, "Acknowledge,Error Code:1"))
+            else:
+                self.zem_dev.scan_relay_mask = mask
+                self._send(packet.addr, self.builder.build_ack(cmd))
         elif cmd == EnumCmd.SetMag:
             self._send(packet.addr, self.resp_set_mag(packet))
         elif cmd == EnumCmd.GetBeamSz:

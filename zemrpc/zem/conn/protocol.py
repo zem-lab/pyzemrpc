@@ -13,6 +13,7 @@ from typing import Tuple
 from loguru import logger
 from enum import Enum
 from dataclasses import dataclass
+from zemrpc.zem.scan_relay import validate_scan_relay_mask
 
 from jgb.util import math_util, json_util
 from jgb.util.enum_util import EnumWithCode
@@ -162,6 +163,8 @@ class EnumCmd(Enum):
     SetOB             = "SetOB",                        True,  100,      EnumCmdLevel.BASIC,        "设置物镜值"
     SetOBRaw          = "SetOBRaw",                     True,  100,      EnumCmdLevel.BASIC,        "直接设置物镜DAC值"
     GetImagingMode    = "GetImagingMode",               False, 100,      EnumCmdLevel.BASIC,        "获取成像模式"
+    GetScanRelayMask  = "GetScanRelayMask",             False, 100,      EnumCmdLevel.BASIC,        "获取扫描档位使能掩码"
+    SetScanRelayMask  = "SetScanRelayMask",             True,  3_000,    EnumCmdLevel.BASIC,        "设置扫描档位使能掩码"
     SetImagingMode    = "SetImagingMode",               True,  3_000,    EnumCmdLevel.BASIC,        "切换正常/鱼眼成像模式"
     GetFisheyeFocus   = "GetFisheyeFocus",              False, 100,      EnumCmdLevel.BASIC,        "获取鱼眼对焦手柄值"
     SetFisheyeFocus   = "SetFisheyeFocus",              True,  100,      EnumCmdLevel.BASIC,        "设置鱼眼对焦手柄值(0-65535)"
@@ -407,6 +410,12 @@ class ProtocolBuilder:
 
     def build_get_imaging_mode(self):
         return self.build_get(EnumCmd.GetImagingMode)
+
+    def build_get_scan_relay_mask(self):
+        return self.build_get(EnumCmd.GetScanRelayMask)
+
+    def build_set_scan_relay_mask(self, mask: int):
+        return self.build_set(EnumCmd.SetScanRelayMask, str(validate_scan_relay_mask(mask)))
 
     def build_set_imaging_mode(self, mode: EnumImagingMode | int):
         if isinstance(mode, bool) or not isinstance(mode, Integral) or mode not in (EnumImagingMode.Normal, EnumImagingMode.Fisheye):
@@ -777,6 +786,9 @@ class RespPacket(BaseResponse):
 
     def parse_imaging_mode(self) -> EnumImagingMode:
         return EnumImagingMode(int(self._parse_1()))
+
+    def parse_scan_relay_mask(self) -> int:
+        return validate_scan_relay_mask(int(self._parse_1()))
 
     def parse_fisheye_focus(self) -> int:
         value = int(self._parse_1())

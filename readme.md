@@ -2,6 +2,8 @@
 
 # pyzemrpc
 
+新增 [扫描档位使能掩码](docs/scan_relay_mask.md)：UDP 设置/查询、JSON-RPC 状态读回；掩码 7 禁用 K4，15 恢复全部档位。
+
 **ZEM远程控制接口（python版本）**
 
 `pyzemrpc` 是安徽泽攸科技（ZEPTOOLS）扫描电镜（SEM）的Python远程控制接口与工具集。它提供了一套Python API，允许开发者通过代码控制SEM设备，以及一个图形用户界面（GUI）用于交互式操作。

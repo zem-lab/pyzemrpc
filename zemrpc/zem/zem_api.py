@@ -166,6 +166,12 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
     def get_imaging_mode(self):
         return self.device.get_imaging_mode()
 
+    def get_scan_relay_mask(self):
+        return self.device.get_scan_relay_mask()
+
+    def set_scan_relay_mask(self, mask: int):
+        return self.device.set_scan_relay_mask(mask)
+
     def set_imaging_mode(self, mode):
         return self.device.set_imaging_mode(mode)
 

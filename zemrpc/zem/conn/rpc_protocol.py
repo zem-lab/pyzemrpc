@@ -10,6 +10,7 @@ from jgb.util import cv_util, idx_util
 from jgb.util.pydantic_util import DefaultModel
 
 from zemrpc.zem.models import Bounds, MetaItem, StagePos, valid_image_bounds
+from zemrpc.zem.scan_relay import validate_scan_relay_mask
 
 
 def _finite_number(value):
@@ -98,7 +99,12 @@ class Status(Req):
     method: str = "Status"
 
 
-class RpcStatusResp(RpcResp): ...
+class RpcStatusResp(RpcResp):
+    @property
+    def scan_relay_mask(self) -> int | None:
+        """None means an older server did not report the mask; never assume all enabled."""
+        value = self.result.get("scan_relay_mask")
+        return None if value is None else validate_scan_relay_mask(value)
 
 
 class SnapParams(DefaultModel):

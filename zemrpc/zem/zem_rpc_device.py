@@ -257,6 +257,7 @@ class ZemModel(AppTreeNode):
     bse_cfg: BseInfo = Field(default=None, on_setattr=True)
 
     mag: float = Field(default=0, on_setattr=True)
+    scan_relay_mask: int | None = Field(default=None, on_setattr=True)
     beam_size: EnumBeamSize = Field(default=EnumBeamSize.Unk, on_setattr=True)
     ob: int = Field(default=0, on_setattr=True)
     wd: float = Field(default=0, on_setattr=True)
@@ -694,7 +695,9 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
             dict: Status information from the device
         """
         data = self.zem_rpc(self.rpc_builder.status())
-        return RpcStatusResp(**data)
+        response = RpcStatusResp(**data)
+        self.m.scan_relay_mask = response.scan_relay_mask
+        return response
 
     def get_nav_param(self) -> NavParam:
         """
@@ -1087,6 +1090,21 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
     def get_imaging_mode(self):
         """Read Instrument's mode; never infer it from an objective value."""
         return self.send(self.builder.build_get_imaging_mode()).parse_imaging_mode()
+
+    def get_scan_relay_mask(self) -> int:
+        """Read normal-scan enabled relays: bit0=K1 .. bit3=K4."""
+        value = self.send(self.builder.build_get_scan_relay_mask()).parse_scan_relay_mask()
+        self.m.scan_relay_mask = value
+        return value
+
+    def set_scan_relay_mask(self, mask: int) -> int | None:
+        """Set 1..15 and read back after ACK; 7 disables K4, 15 enables all.
+
+        The server reselects immediately in idle/video normal mode and rejects
+        an unsupported field or busy/fisheye mode without changing the mask.
+        """
+        response = self.send(self.builder.build_set_scan_relay_mask(mask))
+        return self.get_scan_relay_mask() if response.is_ack_ok() else None
 
     def set_imaging_mode(self, mode):
         """Switch Normal (0) / Fisheye (2); Instrument owns optical restoration."""
