@@ -37,6 +37,7 @@ from jgb.conn.pubsub import PubSub
 from jgb.conn.udp_socket import UdpSocket, UdpPacket
 
 from zemrpc import app_cfg
+from zemrpc.zem.software_info import SoftwareInfo
 from zemrpc.zem.context import ctx
 from zemrpc.zem.conn.img_receiver import ImgReceiver, ImageTransferError
 from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, MetaItem, NavParam, ScanInfo, SnapArgs, StagePos, ZemException, BseInfo, EnumCmdLevel
@@ -258,6 +259,7 @@ class ZemModel(AppTreeNode):
 
     mag: float = Field(default=0, on_setattr=True)
     scan_relay_mask: int | None = Field(default=None, on_setattr=True)
+    software: SoftwareInfo | None = Field(default=None, on_setattr=True)
     beam_size: EnumBeamSize = Field(default=EnumBeamSize.Unk, on_setattr=True)
     ob: int = Field(default=0, on_setattr=True)
     wd: float = Field(default=0, on_setattr=True)
@@ -500,6 +502,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
                 self.socket._socket = None
         self.parser.buffer.clear()
         self.m.addr = ("UNK", 0)
+        self.m.software = None
 
     def _prepare_comm(self):
         """Ensure socket and builder use the interface that can reach the selected device."""
@@ -516,6 +519,8 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         Args:
             addr (Tuple[str, int]): New device address (IP, port)
         """
+        if self.m.addr != addr:
+            self.m.software = None
         self.m.addr = addr
         self._prepare_comm()
         logger.debug(f"Remote device {addr[0]}:{addr[1]} via local {self.builder.ip}:{self.builder.port}")
@@ -697,6 +702,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         data = self.zem_rpc(self.rpc_builder.status())
         response = RpcStatusResp(**data)
         self.m.scan_relay_mask = response.scan_relay_mask
+        self.m.software = response.software
         return response
 
     def get_nav_param(self) -> NavParam:
@@ -732,6 +738,15 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
             elif c == 3:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return img
+
+    def get_software_info(self) -> SoftwareInfo | None:
+        """Query the remote host version and build commit over UDP.
+
+        Older servers that reject this command return None. Network errors propagate.
+        """
+        resp = self.send(self.builder.build_get_software_info())
+        self.m.software = resp.parse_software_info()
+        return self.m.software
 
     def get_model(self) -> str:
         """
@@ -1429,6 +1444,8 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
                 ps.cancel()
 
         # Check for errors in non-handshake, non-RPC responses
+        if req.cmd == EnumCmd.GetSoftwareInfo and resp.is_invalid_cmd():
+            return resp
         if req.cmd != EnumCmd.Handshake and req.cmd != EnumCmd.ZemRpc:
             if resp.is_error() or resp.is_invalid_cmd():
                 raise ZemException.request_error(f"{req.cmd.name}: {resp.data_str}")

@@ -19,6 +19,13 @@ from functools import cached_property
 from jgb.util import cv_util, file_util, json_util
 
 from zemrpc import app_cfg
+from zemrpc.__version__ import __version__
+from zemrpc.zem.software_info import SoftwareInfo
+
+try:
+    from zemrpc.__commit__ import GIT_INFO
+except ImportError:
+    GIT_INFO = ""
 from zemrpc.zem.scan_relay import validate_scan_relay_mask
 from zemrpc.zem.conn.protocol import (
     EnumAutofocusStatus,
@@ -255,6 +262,8 @@ class VirtualZem:
         self.screen_size = (2.54 * 5) * 10  # 5英寸底片倍率
         self.mag = 500
         self.scan_relay_mask = 15
+        # The simulator reports its own SDK build, never a fabricated Shell version.
+        self.software = SoftwareInfo(version=__version__, commit_id=GIT_INFO)
         self.ob = 30000
         self.wd = 11
         self.beam_size = EnumBeamSize.Coarse
@@ -305,6 +314,7 @@ class VirtualZem:
             "Model": "Zem15C",
             "State": state,
             "scan_relay_mask": self.scan_relay_mask,
+            "software": self.software.model_dump(),
             "Hv": {
                 "RealAccVol": self.acc_v if self.is_gun_open else 0,
                 "EmissCur": 0.3128,
@@ -1070,6 +1080,9 @@ class RemoteZem(threading.Thread):
                 self._send(packet.addr, self.builder.build_status_check(EnumStatus.Idle))
         elif cmd == EnumCmd.GetMag:
             self._send(packet.addr, self.builder.build_get_mag(self.zem_dev.mag))
+        elif cmd == EnumCmd.GetSoftwareInfo:
+            info = self.zem_dev.software
+            self._send(packet.addr, self.builder.build_set(cmd, f"{info.version},{info.commit_id}"))
         elif cmd == EnumCmd.GetScanRelayMask:
             self._send(packet.addr, self.builder.build_set(cmd, str(self.zem_dev.scan_relay_mask)))
         elif cmd == EnumCmd.SetScanRelayMask:

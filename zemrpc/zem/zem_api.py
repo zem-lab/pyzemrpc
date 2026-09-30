@@ -169,6 +169,11 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
     def get_scan_relay_mask(self):
         return self.device.get_scan_relay_mask()
 
+    @skip_sync_check
+    def get_software_info(self):
+        """Read software identity without synchronizing optics or requiring HTTP."""
+        return self.device.get_software_info()
+
     def set_scan_relay_mask(self, mask: int):
         return self.device.set_scan_relay_mask(mask)
 

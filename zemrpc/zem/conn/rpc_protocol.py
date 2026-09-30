@@ -11,6 +11,7 @@ from jgb.util.pydantic_util import DefaultModel
 
 from zemrpc.zem.models import Bounds, MetaItem, StagePos, valid_image_bounds
 from zemrpc.zem.scan_relay import validate_scan_relay_mask
+from zemrpc.zem.software_info import SoftwareInfo
 
 
 def _finite_number(value):
@@ -100,6 +101,12 @@ class Status(Req):
 
 
 class RpcStatusResp(RpcResp):
+    @property
+    def software(self) -> SoftwareInfo | None:
+        """None means the remote server does not report software identity."""
+        value = self.result.get("software")
+        return None if value is None else SoftwareInfo.model_validate(value)
+
     @property
     def scan_relay_mask(self) -> int | None:
         """None means an older server did not report the mask; never assume all enabled."""

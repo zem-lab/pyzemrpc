@@ -37,6 +37,13 @@ def main():
         device = ZemRpcDevice(name="scan_relay_loopback")
         device.update_remote_addr(("127.0.0.1", port))
         device.m.protocol_ng = RespProtocolNg(name="ZEMRPC-202409", url=url)
+        software = device.get_software_info()
+        assert software is not None and software.version
+        assert len(software.commit_id) == 40
+        assert device.status_rpc().software == software
+        state = device.zem_rpc({"jsonrpc": "2.0", "id": 100, "method": "SemControlState", "params": []})
+        assert state["result"]["software"] == software.model_dump()
+        print(f"PASS: UDP GetSoftwareInfo == HTTP Status == SemControlState: {software.model_dump()}")
         assert device.get_scan_relay_mask() == 15
         for mask in (7, 4, 1, 15):
             assert device.set_scan_relay_mask(mask) == mask

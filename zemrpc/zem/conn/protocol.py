@@ -14,6 +14,7 @@ from loguru import logger
 from enum import Enum
 from dataclasses import dataclass
 from zemrpc.zem.scan_relay import validate_scan_relay_mask
+from zemrpc.zem.software_info import SoftwareInfo
 
 from jgb.util import math_util, json_util
 from jgb.util.enum_util import EnumWithCode
@@ -222,6 +223,7 @@ class EnumCmd(Enum):
     GetStageTStatus   = "GetStageTStatus",              False, 100,      EnumCmdLevel.BASIC,        "获取T坐标"
     SetAutoSnapTask   = "SetAutoSnapTask",              True,  100,      EnumCmdLevel.ADVANCED,     "设置自动拍图任务"
     GetModel          = "GetModel",                     False, 2_000,    EnumCmdLevel.BASIC,        "获取型号"
+    GetSoftwareInfo   = "GetSoftwareInfo",              False, 2_000,    EnumCmdLevel.BASIC,        "获取远程软件版本和提交号"
     GetBseCfg         = "GetBseCfg",                    False, 1000,     EnumCmdLevel.BASIC,        "获取BSE探测器设置"
     SetBseCfg         = "SetBseCfg",                    True,  1000,     EnumCmdLevel.ADVANCED,     "设置BSE探测器设置"
     ZemRpc            = "ZemRpc",                       True,  100,      EnumCmdLevel.BASIC,        "ZemRpc"
@@ -520,6 +522,9 @@ class ProtocolBuilder:
     def build_get_model(self):
         return self.build_get(EnumCmd.GetModel)
 
+    def build_get_software_info(self):
+        return self.build_get(EnumCmd.GetSoftwareInfo)
+
     def build_get_nav_img(self):
         return self.build_get(EnumCmd.GetNavImg)
 
@@ -718,6 +723,17 @@ class RespPacket(BaseResponse):
         if self.is_invalid_cmd():
             return "ZEM18"
         return self._parse_1()
+
+    def parse_software_info(self) -> SoftwareInfo | None:
+        if self.is_invalid_cmd():
+            return None
+        if self.cmd != EnumCmd.GetSoftwareInfo or self.is_error() or self.is_ack():
+            raise ValueError("Invalid GetSoftwareInfo response")
+        fields = self.data_str.split(":", 1)[1].split(",")
+        if len(fields) != 3:
+            raise ValueError("GetSoftwareInfo requires version and commit_id")
+        version, commit_id = fields[:2]
+        return SoftwareInfo(version=version, commit_id=commit_id)
 
     def is_idle_status(self):
         return self.parse_status() == EnumStatus.Idle.value
