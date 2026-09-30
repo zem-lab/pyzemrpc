@@ -5,7 +5,7 @@ description: Bump, build, validate, and publish the main pyzemrpc pure-Python wh
 
 # Release pyzemrpc
 
-Release the current worktree deliberately. The wheel may include uncommitted user changes, so inspect `git status --short` and `git diff --stat` first, preserve those changes, and confirm they belong in the requested release. Never clean, reset, commit, or push unless the user separately asks.
+Release only committed sources, following the mandatory [repository release order](../../../AGENTS.md). Inspect git status and diff, preserve unrelated user changes, and commit the release-related changes (including the version) before regenerating build metadata and rebuilding the artifact. Use a clean checkout or committed source snapshot when unrelated changes remain. Never package uncommitted source under HEAD's commit, reuse pre-commit binaries, or fix provenance by merely rewriting metadata. Further source changes require another commit and rebuild. Do not clean or reset unrelated work, or push/upload beyond the user's authorization.
 
 ## Workflow
 
@@ -19,19 +19,19 @@ Release the current worktree deliberately. The wheel may include uncommitted use
    ```
 
    `packaging>=24.2` is needed to validate the wheel's Metadata 2.4 `License-File` field.
-5. Run the bundled script from the repository root. After inspecting the dirty worktree, acknowledge it explicitly:
+5. Before running the bundled script, commit the release changes and record the full source commit. Run from the repository root of that clean committed source tree. The legacy ConfirmedWorktree switch does not waive the commit-before-build rule and must not be used to include uncommitted source. If unrelated work remains, use an isolated clean source tree instead:
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File ".agents/skills/release-pyzemrpc/scripts/release_pyzemrpc.ps1" `
-     -Version "<version>" -ConfirmedWorktree
+     -Version "<version>"
    ```
 
    The script refreshes ignored `zemrpc/__commit__.py`, regenerates the ignored Qt UI module from the current `.ui`, cleans `build/`, builds one exact wheel, runs `twine check`, installs that wheel, and runs the non-hardware tests. It excludes `tests/test_zem_api.py` by default because that module requires a responding ZEM at the configured address. Add `-RunHardwareTests` only when the hardware or suitable emulator is ready.
-6. Inspect the reported wheel path, embedded version/commit, size, and SHA-256. To publish the already validated artifact:
+6. Inspect the reported wheel path, embedded version/commit, size, and SHA-256. The embedded commit must equal the recorded build-source commit. To publish the already validated artifact, run in the same committed source tree; do not relabel or rebuild an existing release:
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File ".agents/skills/release-pyzemrpc/scripts/release_pyzemrpc.ps1" `
-     -Version "<version>" -ConfirmedWorktree -ReuseArtifact -Publish
+     -Version "<version>" -ReuseArtifact -Publish
    ```
 
    `-Publish` uploads the exact wheel to `http://dc000.local:7104/zeptools/devpi` with `devpi upload`, then to the `pypi` Twine repository. It never uses a wildcard.

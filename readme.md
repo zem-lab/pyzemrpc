@@ -2,6 +2,8 @@
 
 # pyzemrpc
 
+**发布约束：先提交，再重新构建打包。** 包内 Git 元数据必须对应实际源码提交，不得混入未提交改动或复用提交前构建的旧包。Agent 及发布流程遵守根目录 [AGENTS.md](AGENTS.md)。
+
 新增 [扫描档位使能掩码](docs/scan_relay_mask.md)：UDP 设置/查询、JSON-RPC 状态读回；掩码 7 禁用 K4，15 恢复全部档位。
 
 **ZEM远程控制接口（python版本）**

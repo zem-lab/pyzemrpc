@@ -23,6 +23,8 @@ pip install -e .
 
 ### Build
 
+**Mandatory release order:** follow [AGENTS.md](AGENTS.md). Commit all release-related source, version and build changes first, record the full commit, then regenerate git metadata and rebuild from that clean commit before packaging. Never release binaries built before the commit, include unrelated uncommitted changes, or merely rewrite the manifest's commit. After any further source change, commit and rebuild again. Verify the embedded commit in the actual artifact.
+
 ```bash
 # Build pure Python wheel (updates git info, converts UI files to Python, cleans build dir)
 inv build

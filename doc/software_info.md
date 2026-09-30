@@ -1,5 +1,11 @@
 # 远程软件版本（1.2.6.dev2026093001）
 
+## 发布前必须提交
+
+所有后续打包遵守根目录 [AGENTS.md](../AGENTS.md)：完成本次修改（包括版本号）并提交，记录完整 commit，再从干净提交重新生成 Git 元数据、构建和打包；验证实际包内提交、发布清单与构建提交一致。提交后再改源码，就必须重新提交和重建，不能仅修改清单。Shell 和 pyzemrpc 分别执行此流程，分别记录各自提交，不能互相代替。
+
+## 接口
+
 Shell 1.5.6 起提供 UDP GetSoftwareInfo，并在 JSON-RPC Status / SemControlState 中增加 software：
 
     {"version": "1.5.6", "commit_id": "完整 Git 提交号"}
