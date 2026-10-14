@@ -6,7 +6,6 @@ import sys
 import os
 import contextlib
 import shutil
-import subprocess
 from pathlib import Path
 from invoke import task
 from invoke.context import Context
@@ -78,42 +77,7 @@ def build_rust(c):
         c.run(f"maturin build --release --manifest-path {pkg_path / 'Cargo.toml'}")
 
 
-@task(pre=[git_info, ui2py])
-def build_exe(c: Context):
-    """使用预编译 bootloader 和依赖打包 GUI，不运行 C/C++ 编译器。"""
-    from zemrpc.__version__ import __version__
-    from zemrpc.__commit__ import GIT_INFO
-    out_dir = PROJ_HOME / "dist" / f"pyzemrpc_{__version__}_windows"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    work_dir = PROJ_HOME / "build" / "pyinstaller"
-    work_dir.mkdir(parents=True, exist_ok=True)
-    version_file = work_dir / "version.txt"
-    version_file.write_text(
-        "VSVersionInfo(ffi=FixedFileInfo(filevers=(1,2,7,1),prodvers=(1,2,7,1),mask=0x3f,flags=0,OS=0x40004,fileType=1,subtype=0,date=(0,0)),"
-        "kids=[StringFileInfo([StringTable('040904B0',[StringStruct('CompanyName','ZEPTOOLS'),StringStruct('FileDescription','ZEPTOOLS ZEM Remote Control'),"
-        f"StringStruct('FileVersion',{__version__!r}),StringStruct('ProductVersion',{(__version__+'+'+GIT_INFO)!r}),StringStruct('ProductName','pyzemrpc')])]),VarFileInfo([VarStruct('Translation',[1033,1200])])])",
-        encoding="utf-8",
-    )
-    cmd = [
-        sys.executable,
-        "-m",
-        "PyInstaller", "--noconfirm", "--clean", "--onedir", "--windowed", "--name=pyzemrpc",
-        f"--distpath={out_dir}", f"--workpath={work_dir / 'work'}", f"--specpath={work_dir}", f"--version-file={version_file}",
-        f"--add-data={PROJ_HOME / 'conf/config.yml'};data/pyzemrpc/conf", "--collect-data=jgb",
-        "--exclude-module=PyQt5", "--exclude-module=PyQt6", "--exclude-module=PySide2",
-        "--exclude-module=mandelbrot_zem_rs", "--exclude-module=perlin_zem_rs", "--exclude-module=pytest",
-        "zemrpc/gui/zemrpc_main.py",
-    ]
-    c.run(subprocess.list2cmdline(cmd), env={"QT_API":"pyside6", "PYQTGRAPH_QT_LIB":"PySide6"})
-    dist_dir = out_dir / "pyzemrpc"
-    exe = dist_dir / "pyzemrpc.exe"
-    if exe.exists():
-        print(f"独立 exe: {exe}")
-    else:
-        raise RuntimeError(f"Missing packaged executable: {exe}")
-
-
-@task(pre=[build, build_exe])
+@task(pre=[build])
 def build_all(c):
-    """打包纯 Python wheel 和 PyInstaller GUI，不触发 C/C++ 或 Rust 编译。"""
-    print("pyzemrpc wheel 和 GUI 打包完成")
+    """兼容入口：只构建主包 wheel，不触发可执行程序或原生编译。"""
+    print("pyzemrpc wheel 构建完成")

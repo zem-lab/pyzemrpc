@@ -53,14 +53,14 @@ inv build
 # 构建 Rust 加速包 wheel（平台相关）
 inv build_rust
 
-# 一键打包主包 wheel 和独立 GUI（不编译 C/C++）
+# 兼容入口：同样只构建主包 wheel
 inv build_all
 
 # 构建带文档
 inv build --docs
 
-# 使用 PyInstaller 打包独立目录的 pyzemrpc.exe（不编译 C/C++）
-inv build_exe
+# 安装 wheel 后启动 GUI
+pyzemrpc
 
 # 辅助任务
 inv git_info   # 将 git commit hash 写入 zemrpc/__commit__.py
@@ -71,7 +71,7 @@ Rust 加速包（`mandelbrot_zem_rs`、`perlin_zem_rs`）需安装 `maturin` 和
 
 ### 发布
 
-- [PyPI/Twine 发布指南](twine_release.md) — 包含三包构建、上传和 CI 自动化说明
+- [PyPI/Twine 发布指南](twine_release.md) — 主包 wheel 的构建、校验与发布约定
 
 ### 测试
 
@@ -107,7 +107,7 @@ GUI 启动后设备下拉框默认选中 **本机**（`127.0.0.1:61557`）。本
 - 本机服务未开时，同步失败提示：`命令超时，可能电镜服务未开启`。`zem_api.sync()` 失败会重新抛出异常。
 - 普通协议命令超时默认按 3 倍等待；默认超时达到 10 秒的长命令保持原值。2026-09-20 起 Handshake 不参与倍率：loopback 探测固定 0.4 秒，广播发现窗口与 fallback 握手使用协议原始超时。可通过 `zem_api.set_timeout_multiple(1)` 恢复其他命令的原始超时，或设置其他正数倍数。
 - `inv build` 产物：`dist/pyzemrpc-<版本>-py3-none-any.whl`。
-- `inv build_exe` 使用 PyInstaller onedir 打包 `zemrpc/gui/zemrpc_main.py`，输出 `dist/pyzemrpc_<版本>_windows/pyzemrpc/pyzemrpc.exe`，不使用 Nuitka 或 C/C++ 编译器。独立 exe 内 `sys.executable` 不是 Python，GUI「启动虚拟 ZEM」子进程不可用；虚拟 ZEM 使用已安装 wheel 的 Python 环境单独启动。
+当前仅发布主包纯 Python wheel，不制作独立 exe，不使用 PyInstaller、Nuitka 或 C/C++ 编译。GUI 和样品台运动参数调试页随 wheel 保留，安装后运行 `pyzemrpc`。
 
 相关实现：
 - `zemrpc/gui/zemrpc_win.py`、`zemrpc/gui/ui_utils.py`
