@@ -99,7 +99,7 @@ def build_exe(c: Context):
         "-m",
         "PyInstaller", "--noconfirm", "--clean", "--onedir", "--windowed", "--name=pyzemrpc",
         f"--distpath={out_dir}", f"--workpath={work_dir / 'work'}", f"--specpath={work_dir}", f"--version-file={version_file}",
-        "--add-data=conf/config.yml;data/pyzemrpc/conf", "--collect-data=jgb",
+        f"--add-data={PROJ_HOME / 'conf/config.yml'};data/pyzemrpc/conf", "--collect-data=jgb",
         "--exclude-module=PyQt5", "--exclude-module=PyQt6", "--exclude-module=PySide2",
         "--exclude-module=mandelbrot_zem_rs", "--exclude-module=perlin_zem_rs", "--exclude-module=pytest",
         "zemrpc/gui/zemrpc_main.py",
