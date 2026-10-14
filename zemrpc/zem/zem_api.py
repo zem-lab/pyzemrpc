@@ -170,6 +170,14 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
         return self.device.get_scan_relay_mask()
 
     @skip_sync_check
+    def get_stage_motion_parameters(self, *, transport="jsonrpc", url=None):
+        return self.device.get_stage_motion_parameters(transport=transport, url=url)
+
+    @skip_sync_check
+    def set_stage_motion_parameters(self, axes, *, transport="jsonrpc", url=None):
+        return self.device.set_stage_motion_parameters(axes, transport=transport, url=url)
+
+    @skip_sync_check
     def get_software_info(self):
         """Read software identity without synchronizing optics or requiring HTTP."""
         return self.device.get_software_info()

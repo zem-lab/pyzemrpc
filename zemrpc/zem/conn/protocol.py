@@ -166,6 +166,8 @@ class EnumCmd(Enum):
     GetImagingMode    = "GetImagingMode",               False, 100,      EnumCmdLevel.BASIC,        "获取成像模式"
     GetScanRelayMask  = "GetScanRelayMask",             False, 100,      EnumCmdLevel.BASIC,        "获取扫描档位使能掩码"
     SetScanRelayMask  = "SetScanRelayMask",             True,  3_000,    EnumCmdLevel.BASIC,        "设置扫描档位使能掩码"
+    GetStageMotionParameters = "GetStageMotionParameters", False, 20_000, EnumCmdLevel.BASIC, "读取样品台运动参数"
+    SetStageMotionParameters = "SetStageMotionParameters", True, 20_000, EnumCmdLevel.ADVANCED, "设置样品台运动参数并核验"
     SetImagingMode    = "SetImagingMode",               True,  3_000,    EnumCmdLevel.BASIC,        "切换正常/鱼眼成像模式"
     GetFisheyeFocus   = "GetFisheyeFocus",              False, 100,      EnumCmdLevel.BASIC,        "获取鱼眼对焦手柄值"
     SetFisheyeFocus   = "SetFisheyeFocus",              True,  100,      EnumCmdLevel.BASIC,        "设置鱼眼对焦手柄值(0-65535)"
@@ -415,6 +417,13 @@ class ProtocolBuilder:
 
     def build_get_scan_relay_mask(self):
         return self.build_get(EnumCmd.GetScanRelayMask)
+
+    def build_get_stage_motion_parameters(self):
+        return self.build_get(EnumCmd.GetStageMotionParameters)
+
+    def build_set_stage_motion_parameters(self, axes):
+        from zemrpc.zem.stage_motion_parameters import encode_request
+        return self.build_set(EnumCmd.SetStageMotionParameters, encode_request(axes))
 
     def build_set_scan_relay_mask(self, mask: int):
         return self.build_set(EnumCmd.SetScanRelayMask, str(validate_scan_relay_mask(mask)))
@@ -858,6 +867,12 @@ class RespPacket(BaseResponse):
         s = base64.b64decode(self._parse_1()).decode()
         logger.debug(f"ZemRpc: {s}")
         return json.loads(s)
+
+    def parse_stage_motion_parameters(self, requested=None):
+        from zemrpc.zem.stage_motion_parameters import decode_state
+        if self.is_invalid_cmd() or self.is_error():
+            raise ValueError("电镜拒绝样品台运动参数请求，请更新软件并核对状态")
+        return decode_state(self._parse_1(), requested)
 
     def parse_allow_open_gun(self) -> bool:
         return self._parse_1().lower() == "true"

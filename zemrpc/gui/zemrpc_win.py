@@ -23,6 +23,7 @@ from zemrpc.zem.conn.protocol import EnumCmd, EnumVideoStatus
 
 from .widgets.zem_img_viewer import ZemImgViewer
 from .widgets.nav_img_viewer import NavImgViewer
+from .widgets.stage_motion_parameters import StageMotionParametersTab
 from .zemrpc_win_ui import Ui_Form
 
 
@@ -128,6 +129,8 @@ class ZemRpcWidget(QWidget):
         ctx.sub_attr(zem_api.device.m, "ob", Attrs2QtValue(self, self.update_ob, emitter=self.emitter))
 
     def init_ui(self):
+        self.stage_motion_parameters_tab = StageMotionParametersTab(self)
+        self.ui.tab_modules.addTab(self.stage_motion_parameters_tab, "样品台运动参数")
         self.ui.tab_modules.setCurrentIndex(0)
         self.ui.ipt_hv.setRange(0, 30)
         self._init_cbox_cmds()
@@ -462,11 +465,7 @@ class ZemRpcWidget(QWidget):
             zem_api.device.get_stage_pos()
             zem_api.sync_scan_field()
 
-        def on_complete(success, result):
-            if success:
-                self.update_stage_pos(result)
-
-        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_stage_xy_pos, stage_xy_pos_task, on_complete))
+        ctx.async_executor.run(QPushButtonClicked(self.ui.btn_stage_xy_pos, stage_xy_pos_task))
 
     def _slot_btn_stage_xy_goto(self):
         def stage_xy_goto_task():

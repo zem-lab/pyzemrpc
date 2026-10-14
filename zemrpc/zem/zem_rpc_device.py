@@ -50,7 +50,7 @@ from zemrpc.zem import ip_util
 def _retry_pubsub_request(retry_state):
     """Acquisition/navigation writes have no request ID; never replay an ambiguous result."""
     request = retry_state.args[1] if len(retry_state.args) > 1 else retry_state.kwargs["req"]
-    return retry_state.outcome.failed and request.cmd not in {EnumCmd.Snap, EnumCmd.SetRoiNav, EnumCmd.SetStagePos} and not isinstance(retry_state.outcome.exception(), CancelledError)
+    return retry_state.outcome.failed and request.cmd not in {EnumCmd.Snap, EnumCmd.SetRoiNav, EnumCmd.SetStagePos, EnumCmd.SetStageMotionParameters, EnumCmd.GetStageMotionParameters} and not isinstance(retry_state.outcome.exception(), CancelledError)
 
 
 class HandshakePubSub(PubSub):
@@ -704,6 +704,24 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         self.m.scan_relay_mask = response.scan_relay_mask
         self.m.software = response.software
         return response
+
+    def get_stage_motion_parameters(self, *, transport="jsonrpc", url=None):
+        from zemrpc.zem.stage_motion_parameters import StageMotionJsonRpc
+        if transport == "jsonrpc":
+            return StageMotionJsonRpc(url or self.m.protocol_ng.url).read()
+        if transport != "udp":
+            raise ValueError("transport 仅支持 jsonrpc/udp")
+        return self.send(self.builder.build_get_stage_motion_parameters()).parse_stage_motion_parameters()
+
+    def set_stage_motion_parameters(self, axes, *, transport="jsonrpc", url=None):
+        from zemrpc.zem.stage_motion_parameters import StageMotionJsonRpc, validate_axes
+        axes = validate_axes(axes)
+        self._check_cmd_permission(EnumCmd.SetStageMotionParameters)
+        if transport == "jsonrpc":
+            return StageMotionJsonRpc(url or self.m.protocol_ng.url).configure(axes)
+        if transport != "udp":
+            raise ValueError("transport 仅支持 jsonrpc/udp")
+        return self.send(self.builder.build_set_stage_motion_parameters(axes)).parse_stage_motion_parameters(axes)
 
     def get_nav_param(self) -> NavParam:
         """

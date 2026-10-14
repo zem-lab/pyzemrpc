@@ -86,9 +86,8 @@ def build_all(c, docs=False):
 @task(pre=[git_info, ui2py])
 def build_exe(c: Context):
     """将 zemrpc.gui.zemrpc_main 编译为独立目录分发的 pyzemrpc.exe"""
-    out_dir = PROJ_HOME / "dist" / "exe"
-    if out_dir.exists():
-        shutil.rmtree(out_dir, True)
+    from zemrpc.__version__ import __version__
+    out_dir = PROJ_HOME / "dist" / f"pyzemrpc_{__version__}_windows"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -100,11 +99,11 @@ def build_exe(c: Context):
         "--msvc=latest",
         "--enable-plugin=pyside6",
         "--windows-console-mode=disable",
-        "--output-dir=dist/exe",
+        f"--output-dir={out_dir}",
         "--output-filename=pyzemrpc.exe",
         "--product-name=pyzemrpc",
-        "--product-version=1.2.6.2",
-        "--file-version=1.2.6.2",
+        "--product-version=1.2.7.1",
+        "--file-version=1.2.7.1",
         "--file-description=ZEPTOOLS ZEM Remote Control",
         "--include-package=zemrpc",
         "--include-data-files=conf/config.yml=data/pyzemrpc/conf/config.yml",
