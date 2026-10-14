@@ -32,7 +32,7 @@ inv build
 # Build Rust accelerator wheels (mandelbrot_zem_rs, perlin_zem_rs) for current platform
 inv build_rust
 
-# Build all packages (main + both Rust wheels)
+# Package the main wheel and PyInstaller GUI (no native compilation)
 inv build_all
 
 # Build with docs
@@ -44,11 +44,11 @@ inv git_info
 # Convert .ui Qt Designer files to Python
 inv ui2py
 
-# Compile GUI (zemrpc.gui.zemrpc_main) to a standalone pyzemrpc.exe via Nuitka
+# Package GUI with PyInstaller onedir; never use Nuitka or C/C++ compilation
 inv build_exe
 ```
 
-**Rust accelerator packages** are built with `maturin` and require a Rust toolchain. They produce platform-specific wheels (e.g., `cp312-win_amd64`). When not installed, the virtual ZEM falls back to pure Python/NumPy implementations automatically.
+`inv build_all` packages the pure-Python wheel and PyInstaller GUI without native compilation. Rust accelerator packages have a separate optional `build_rust` entry point and are not part of the main SDK/GUI release. When not installed, the virtual ZEM uses Python/NumPy. Follow the no-C-compilation rule in [AGENTS.md](AGENTS.md).
 
 
 ### Testing

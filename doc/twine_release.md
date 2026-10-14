@@ -52,7 +52,7 @@ export TWINE_PASSWORD=your_password
 ### 一键构建
 
 ```bash
-# 构建所有三个包
+# 打包主包 wheel 与 PyInstaller GUI，不编译 C/C++ 或 Rust
 inv build_all
 ```
 
@@ -67,7 +67,7 @@ inv build_all
 # 1. 构建主包（纯 Python wheel）
 inv build
 
-# 可选：将 GUI 编译为独立 exe（Nuitka standalone，输出 dist/exe/zemrpc_main.dist/）
+# 可选：使用 PyInstaller 打包独立 exe（输出 dist/pyzemrpc_<版本>_windows/pyzemrpc/，不编译 C/C++）
 inv build_exe
 
 # 2. 构建 Rust 加速包（平台相关 wheel）

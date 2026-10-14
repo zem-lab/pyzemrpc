@@ -1,5 +1,13 @@
 # Agent 工作约定
 
+## 打包方式（用户确认，2026-10-14）
+
+- **pyzemrpc 主包和 GUI 以后不做 C/C++ 编译，不使用 Nuitka，也不调用 MSVC/GCC/Clang 编译 Python 代码。**
+- 主包构建纯 Python wheel；独立 GUI 使用 `invoke build_exe` 的 PyInstaller onedir 打包，收集现成的 Python、Qt 和依赖二进制。
+- `invoke build_all` 仅生成 wheel 与 PyInstaller GUI，不触发原生编译。`build_rust` 是独立可选加速包入口，不纳入主包/GUI交付流程。
+- 打包依赖优先安装已有 wheel，缺少二进制依赖时明确报告，不自动转为源码/C编译。
+- 继续遵守下方先提交源码、再生成构建元数据和产物、校验版本/源提交/SHA256 的规则。
+
 ## 强制发布顺序：先提交，再构建打包
 
 维护者于 2026-09-30 明确要求所有交付产物先提交再打包，使嵌入的 commit 能准确追溯实际源码。适用于 wheel、exe 及其他发布包。

@@ -51,6 +51,8 @@ def git_info(c):
 @task
 def clean_build(c):
     d = PROJ_HOME / "build"
+    if d.resolve() != PROJ_HOME.resolve() / "build":
+        raise RuntimeError("Refusing to clean a redirected build directory")
     if d.exists():
         shutil.rmtree(d, True)
 
@@ -76,46 +78,42 @@ def build_rust(c):
         c.run(f"maturin build --release --manifest-path {pkg_path / 'Cargo.toml'}")
 
 
-@task(pre=[build, build_rust])
-def build_all(c, docs=False):
-    """构建 pyzemrpc 纯 Python wheel + 两个 Rust 加速包 wheel"""
-    print("\n=== 所有 wheel 构建完成 ===")
-    print("wheel 文件位于各自目录的 target/wheels/ 下")
-
-
 @task(pre=[git_info, ui2py])
 def build_exe(c: Context):
-    """将 zemrpc.gui.zemrpc_main 编译为独立目录分发的 pyzemrpc.exe"""
+    """使用预编译 bootloader 和依赖打包 GUI，不运行 C/C++ 编译器。"""
     from zemrpc.__version__ import __version__
+    from zemrpc.__commit__ import GIT_INFO
     out_dir = PROJ_HOME / "dist" / f"pyzemrpc_{__version__}_windows"
     out_dir.mkdir(parents=True, exist_ok=True)
-
+    work_dir = PROJ_HOME / "build" / "pyinstaller"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    version_file = work_dir / "version.txt"
+    version_file.write_text(
+        "VSVersionInfo(ffi=FixedFileInfo(filevers=(1,2,7,1),prodvers=(1,2,7,1),mask=0x3f,flags=0,OS=0x40004,fileType=1,subtype=0,date=(0,0)),"
+        "kids=[StringFileInfo([StringTable('040904B0',[StringStruct('CompanyName','ZEPTOOLS'),StringStruct('FileDescription','ZEPTOOLS ZEM Remote Control'),"
+        f"StringStruct('FileVersion',{__version__!r}),StringStruct('ProductVersion',{(__version__+'+'+GIT_INFO)!r}),StringStruct('ProductName','pyzemrpc')])]),VarFileInfo([VarStruct('Translation',[1033,1200])])])",
+        encoding="utf-8",
+    )
     cmd = [
         sys.executable,
         "-m",
-        "nuitka",
-        "--mode=standalone",
-        "--assume-yes-for-downloads",
-        "--msvc=latest",
-        "--enable-plugin=pyside6",
-        "--windows-console-mode=disable",
-        f"--output-dir={out_dir}",
-        "--output-filename=pyzemrpc.exe",
-        "--product-name=pyzemrpc",
-        "--product-version=1.2.7.1",
-        "--file-version=1.2.7.1",
-        "--file-description=ZEPTOOLS ZEM Remote Control",
-        "--include-package=zemrpc",
-        "--include-data-files=conf/config.yml=data/pyzemrpc/conf/config.yml",
-        "--nofollow-import-to=mandelbrot_zem_rs",
-        "--nofollow-import-to=perlin_zem_rs",
-        "--nofollow-import-to=tests",
-        "--main=zemrpc/gui/zemrpc_main.py",
+        "PyInstaller", "--noconfirm", "--clean", "--onedir", "--windowed", "--name=pyzemrpc",
+        f"--distpath={out_dir}", f"--workpath={work_dir / 'work'}", f"--specpath={work_dir}", f"--version-file={version_file}",
+        "--add-data=conf/config.yml;data/pyzemrpc/conf", "--collect-data=jgb",
+        "--exclude-module=PyQt5", "--exclude-module=PyQt6", "--exclude-module=PySide2",
+        "--exclude-module=mandelbrot_zem_rs", "--exclude-module=perlin_zem_rs", "--exclude-module=pytest",
+        "zemrpc/gui/zemrpc_main.py",
     ]
-    c.run(subprocess.list2cmdline(cmd))
-    dist_dir = out_dir / "zemrpc_main.dist"
+    c.run(subprocess.list2cmdline(cmd), env={"QT_API":"pyside6", "PYQTGRAPH_QT_LIB":"PySide6"})
+    dist_dir = out_dir / "pyzemrpc"
     exe = dist_dir / "pyzemrpc.exe"
     if exe.exists():
         print(f"独立 exe: {exe}")
     else:
-        print(f"Nuitka 输出目录: {out_dir}")
+        raise RuntimeError(f"Missing packaged executable: {exe}")
+
+
+@task(pre=[build, build_exe])
+def build_all(c):
+    """打包纯 Python wheel 和 PyInstaller GUI，不触发 C/C++ 或 Rust 编译。"""
+    print("pyzemrpc wheel 和 GUI 打包完成")

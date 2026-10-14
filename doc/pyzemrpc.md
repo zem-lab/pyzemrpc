@@ -53,13 +53,13 @@ inv build
 # 构建 Rust 加速包 wheel（平台相关）
 inv build_rust
 
-# 一键构建所有三个包
+# 一键打包主包 wheel 和独立 GUI（不编译 C/C++）
 inv build_all
 
 # 构建带文档
 inv build --docs
 
-# 将 GUI 入口编译为独立目录分发的 pyzemrpc.exe（需 Nuitka + MSVC，耗时长）
+# 使用 PyInstaller 打包独立目录的 pyzemrpc.exe（不编译 C/C++）
 inv build_exe
 
 # 辅助任务

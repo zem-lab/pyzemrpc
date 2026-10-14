@@ -42,7 +42,7 @@ class AppConfig(app_util.BaseAppConfig):
 
     def init_cfg(self):
         assert self.run_type != app_util.AppRunType.DEV
-        in_dir = Path(sys.prefix) / f"data/{__title__}"
+        in_dir = Path(getattr(sys, "_MEIPASS", sys.prefix)) / f"data/{__title__}"
         files = [
             (in_dir / "conf/config.yml", self.app_home / "conf/config.yml"),
         ]

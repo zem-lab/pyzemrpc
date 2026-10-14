@@ -1,6 +1,6 @@
 ---
 name: release-pyzemrpc
-description: Bump, build, validate, and publish the main pyzemrpc pure-Python wheel to public PyPI and the project's local devpi index. Use for pyzemrpc SDK wheel releases; do not use for the optional Rust accelerator wheels or Nuitka executable releases.
+description: Bump, build, validate, and publish the main pyzemrpc pure-Python wheel to public PyPI and the project's local devpi index. Use for pyzemrpc SDK wheel releases; do not use for the optional Rust accelerator wheels or GUI executable packaging.
 ---
 
 # Release pyzemrpc
