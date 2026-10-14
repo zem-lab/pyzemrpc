@@ -106,8 +106,8 @@ GUI 启动后设备下拉框默认选中 **本机**（`127.0.0.1:61557`）。本
 - 扫描在线设备：各网卡广播 + `127.0.0.1` 单播；扫描结束后按当前目标恢复绑定，不改写本机回包地址。
 - 本机服务未开时，同步失败提示：`命令超时，可能电镜服务未开启`。`zem_api.sync()` 失败会重新抛出异常。
 - 普通协议命令超时默认按 3 倍等待；默认超时达到 10 秒的长命令保持原值。2026-09-20 起 Handshake 不参与倍率：loopback 探测固定 0.4 秒，广播发现窗口与 fallback 握手使用协议原始超时。可通过 `zem_api.set_timeout_multiple(1)` 恢复其他命令的原始超时，或设置其他正数倍数。
-- `inv build` 产物：`dist/pyzemrpc-1.2.6.dev2026090902-py3-none-any.whl`。
-- `inv build_exe` 用 Nuitka standalone 编译 `zemrpc/gui/zemrpc_main.py`，输出 `dist/exe/zemrpc_main.dist/pyzemrpc.exe`。该编译依赖 Nuitka 与 MSVC，耗时长；独立 exe 内 `sys.executable` 不是 Python，GUI「启动虚拟 ZEM」子进程不可用。
+- `inv build` 产物：`dist/pyzemrpc-<版本>-py3-none-any.whl`。
+- `inv build_exe` 使用 PyInstaller onedir 打包 `zemrpc/gui/zemrpc_main.py`，输出 `dist/pyzemrpc_<版本>_windows/pyzemrpc/pyzemrpc.exe`，不使用 Nuitka 或 C/C++ 编译器。独立 exe 内 `sys.executable` 不是 Python，GUI「启动虚拟 ZEM」子进程不可用；虚拟 ZEM 使用已安装 wheel 的 Python 环境单独启动。
 
 相关实现：
 - `zemrpc/gui/zemrpc_win.py`、`zemrpc/gui/ui_utils.py`
