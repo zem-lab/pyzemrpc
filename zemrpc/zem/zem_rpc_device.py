@@ -260,6 +260,7 @@ class ZemModel(AppTreeNode):
     mag: float = Field(default=0, on_setattr=True)
     scan_relay_mask: int | None = Field(default=None, on_setattr=True)
     software: SoftwareInfo | None = Field(default=None, on_setattr=True)
+    sn: str | None = Field(default=None, on_setattr=True)
     beam_size: EnumBeamSize = Field(default=EnumBeamSize.Unk, on_setattr=True)
     ob: int = Field(default=0, on_setattr=True)
     wd: float = Field(default=0, on_setattr=True)
@@ -503,6 +504,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         self.parser.buffer.clear()
         self.m.addr = ("UNK", 0)
         self.m.software = None
+        self.m.sn = None
 
     def _prepare_comm(self):
         """Ensure socket and builder use the interface that can reach the selected device."""
@@ -521,6 +523,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         """
         if self.m.addr != addr:
             self.m.software = None
+            self.m.sn = None
         self.m.addr = addr
         self._prepare_comm()
         logger.debug(f"Remote device {addr[0]}:{addr[1]} via local {self.builder.ip}:{self.builder.port}")
@@ -703,6 +706,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         response = RpcStatusResp(**data)
         self.m.scan_relay_mask = response.scan_relay_mask
         self.m.software = response.software
+        self.m.sn = response.sn
         return response
 
     def get_stage_motion_parameters(self, *, transport="jsonrpc", url=None):
@@ -765,6 +769,15 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         resp = self.send(self.builder.build_get_software_info())
         self.m.software = resp.parse_software_info()
         return self.m.software
+
+    def get_sn(self) -> str | None:
+        """Query the SN configured in the remote microscope over UDP.
+
+        Older servers that reject this command return None. Network errors propagate.
+        """
+        resp = self.send(self.builder.build_get_sn())
+        self.m.sn = resp.parse_sn()
+        return self.m.sn
 
     def get_model(self) -> str:
         """
@@ -1462,7 +1475,7 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
                 ps.cancel()
 
         # Check for errors in non-handshake, non-RPC responses
-        if req.cmd == EnumCmd.GetSoftwareInfo and resp.is_invalid_cmd():
+        if req.cmd in (EnumCmd.GetSoftwareInfo, EnumCmd.GetSN) and resp.is_invalid_cmd():
             return resp
         if req.cmd != EnumCmd.Handshake and req.cmd != EnumCmd.ZemRpc:
             if resp.is_error() or resp.is_invalid_cmd():

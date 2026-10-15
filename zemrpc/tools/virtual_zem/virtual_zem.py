@@ -264,6 +264,7 @@ class VirtualZem:
         self.scan_relay_mask = 15
         # The simulator reports its own SDK build, never a fabricated Shell version.
         self.software = SoftwareInfo(version=__version__, commit_id=GIT_INFO)
+        self.sn = "VIRTUALZEM"
         self.ob = 30000
         self.wd = 11
         self.beam_size = EnumBeamSize.Coarse
@@ -314,6 +315,7 @@ class VirtualZem:
             "Model": "Zem15C",
             "State": state,
             "scan_relay_mask": self.scan_relay_mask,
+            "sn": self.sn,
             "software": self.software.model_dump(),
             "Hv": {
                 "RealAccVol": self.acc_v if self.is_gun_open else 0,
@@ -1083,6 +1085,8 @@ class RemoteZem(threading.Thread):
         elif cmd == EnumCmd.GetSoftwareInfo:
             info = self.zem_dev.software
             self._send(packet.addr, self.builder.build_set(cmd, f"{info.version},{info.commit_id}"))
+        elif cmd == EnumCmd.GetSN:
+            self._send(packet.addr, self.builder.build_set(cmd, self.zem_dev.sn))
         elif cmd == EnumCmd.GetScanRelayMask:
             self._send(packet.addr, self.builder.build_set(cmd, str(self.zem_dev.scan_relay_mask)))
         elif cmd == EnumCmd.SetScanRelayMask:

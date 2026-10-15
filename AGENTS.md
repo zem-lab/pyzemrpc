@@ -24,4 +24,4 @@
 
 注意仓库归属：真实电镜的 software.commit_id 是远程 Shell 的构建提交，SDK 必须原样解析，不能用本地 pyzemrpc 的 GIT_INFO 代替。VirtualZem 报告自己的 SDK 构建身份。跨项目交付时，各仓库分别先提交、再构建并记录各自的 commit。
 
-相关说明：[软件版本接口](doc/software_info.md)、[Python 开发约定](CLAUDE.md)、[发布技能](.agents/skills/release-pyzemrpc/SKILL.md)。
+相关说明：[软件版本与电镜 SN 接口](doc/software_info.md)、[Python 开发约定](CLAUDE.md)、[发布技能](.agents/skills/release-pyzemrpc/SKILL.md)。

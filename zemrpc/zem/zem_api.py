@@ -182,6 +182,11 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
         """Read software identity without synchronizing optics or requiring HTTP."""
         return self.device.get_software_info()
 
+    @skip_sync_check
+    def get_sn(self):
+        """Read the microscope SN without synchronizing optics or requiring HTTP."""
+        return self.device.get_sn()
+
     def set_scan_relay_mask(self, mask: int):
         return self.device.set_scan_relay_mask(mask)
 

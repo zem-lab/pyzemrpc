@@ -226,6 +226,7 @@ class EnumCmd(Enum):
     SetAutoSnapTask   = "SetAutoSnapTask",              True,  100,      EnumCmdLevel.ADVANCED,     "设置自动拍图任务"
     GetModel          = "GetModel",                     False, 2_000,    EnumCmdLevel.BASIC,        "获取型号"
     GetSoftwareInfo   = "GetSoftwareInfo",              False, 2_000,    EnumCmdLevel.BASIC,        "获取远程软件版本和提交号"
+    GetSN             = "GetSN",                        False, 2_000,    EnumCmdLevel.BASIC,        "获取电镜配置的SN"
     GetBseCfg         = "GetBseCfg",                    False, 1000,     EnumCmdLevel.BASIC,        "获取BSE探测器设置"
     SetBseCfg         = "SetBseCfg",                    True,  1000,     EnumCmdLevel.ADVANCED,     "设置BSE探测器设置"
     ZemRpc            = "ZemRpc",                       True,  100,      EnumCmdLevel.BASIC,        "ZemRpc"
@@ -534,6 +535,9 @@ class ProtocolBuilder:
     def build_get_software_info(self):
         return self.build_get(EnumCmd.GetSoftwareInfo)
 
+    def build_get_sn(self):
+        return self.build_get(EnumCmd.GetSN)
+
     def build_get_nav_img(self):
         return self.build_get(EnumCmd.GetNavImg)
 
@@ -743,6 +747,16 @@ class RespPacket(BaseResponse):
             raise ValueError("GetSoftwareInfo requires version and commit_id")
         version, commit_id = fields[:2]
         return SoftwareInfo(version=version, commit_id=commit_id)
+
+    def parse_sn(self) -> str | None:
+        if self.is_invalid_cmd():
+            return None
+        if self.cmd != EnumCmd.GetSN or self.is_error() or self.is_ack():
+            raise ValueError("Invalid GetSN response")
+        fields = self.data_str.split(":", 1)[1].split(",")
+        if len(fields) != 2:
+            raise ValueError("GetSN requires exactly one SN field")
+        return fields[0]
 
     def is_idle_status(self):
         return self.parse_status() == EnumStatus.Idle.value

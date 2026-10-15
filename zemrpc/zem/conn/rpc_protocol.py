@@ -108,6 +108,14 @@ class RpcStatusResp(RpcResp):
         return None if value is None else SoftwareInfo.model_validate(value)
 
     @property
+    def sn(self) -> str | None:
+        """None means the remote server does not report the microscope SN."""
+        value = self.result.get("sn")
+        if value is not None and not isinstance(value, str):
+            raise ValueError("Status sn must be a string")
+        return value
+
+    @property
     def scan_relay_mask(self) -> int | None:
         """None means an older server did not report the mask; never assume all enabled."""
         value = self.result.get("scan_relay_mask")
