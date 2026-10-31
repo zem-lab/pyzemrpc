@@ -1,5 +1,5 @@
 __title__ = "pyzemrpc"
-__version__ = "1.2.8.dev2026101501"
+__version__ = "1.2.8.dev2026103101"
 __description__ = "zeptools zem remote api."
 __keywords__ = "SEM,Calibration,Utilities"
 __url__ = "https://gitee.com/zeyou-anhui/pyzemrpc.git"

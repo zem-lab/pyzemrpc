@@ -709,6 +709,26 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         self.m.sn = response.sn
         return response
 
+    def json_rpc(self, method, params=None, *, timeout=20):
+        """Call negotiated JSON-RPC once, with bounded timeout and ID validation."""
+        from zemrpc.zem.stage_motion_parameters import StageMotionJsonRpc
+        return StageMotionJsonRpc(self.m.protocol_ng.url, timeout=timeout).call(method, params or [])
+
+    def get_scan_analog_zero(self):
+        """Read cached CHC/CHD, ranges and saved calibration through Status."""
+        from zemrpc.zem.scan_analog_zero import ScanAnalogZeroJsonRpc
+        return ScanAnalogZeroJsonRpc(self.m.protocol_ng.url).read()
+
+    def set_scan_analog_zero(self, sin, cos):
+        """Temporarily apply normal-mode CHC/CHD; requires zero beam shift."""
+        from zemrpc.zem.scan_analog_zero import ScanAnalogZeroJsonRpc
+        return ScanAnalogZeroJsonRpc(self.m.protocol_ng.url).set(sin, cos)
+
+    def save_scan_analog_zero(self, expected_sin, expected_cos):
+        """Persist only if the current live pair still equals the verified pair."""
+        from zemrpc.zem.scan_analog_zero import ScanAnalogZeroJsonRpc
+        return ScanAnalogZeroJsonRpc(self.m.protocol_ng.url).save(expected_sin, expected_cos)
+
     def get_stage_motion_parameters(self, *, transport="jsonrpc", url=None):
         from zemrpc.zem.stage_motion_parameters import StageMotionJsonRpc
         if transport == "jsonrpc":

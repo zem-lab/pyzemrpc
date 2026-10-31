@@ -102,6 +102,12 @@ class Status(Req):
 
 class RpcStatusResp(RpcResp):
     @property
+    def scan_analog_zero(self) -> dict | None:
+        from zemrpc.zem.scan_analog_zero import validate_state
+        value = self.result.get("scan_analog_zero")
+        return None if value is None else validate_state(value)
+
+    @property
     def software(self) -> SoftwareInfo | None:
         """None means the remote server does not report software identity."""
         value = self.result.get("software")
