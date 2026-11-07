@@ -44,7 +44,22 @@ from zemrpc.zem.conn.protocol import (
     BseInfo,
     BseQuadrant,
     EnumBsePhase,
+    validate_ast_dac,
+    validate_optics_percentage,
 )
+
+
+# Raw coil counts shared by GetAst/SetAst and the percentage commands.
+_OPTICS_GET_FIELDS = {
+    EnumCmd.GetStigX: "astig_a", EnumCmd.GetStigY: "astig_b",
+    EnumCmd.GetUpCenterX: "astig_c", EnumCmd.GetUpCenterY: "astig_d",
+    EnumCmd.GetDownCenterX: "down_center_x", EnumCmd.GetDownCenterY: "down_center_y",
+}
+_OPTICS_SET_FIELDS = {
+    EnumCmd.SetStigX: "astig_a", EnumCmd.SetStigY: "astig_b",
+    EnumCmd.SetUpCenterX: "astig_c", EnumCmd.SetUpCenterY: "astig_d",
+    EnumCmd.SetDownCenterX: "down_center_x", EnumCmd.SetDownCenterY: "down_center_y",
+}
 
 
 class ZemRespBuilder:
@@ -265,6 +280,7 @@ class VirtualZem:
         # The simulator reports its own SDK build, never a fabricated Shell version.
         self.software = SoftwareInfo(version=__version__, commit_id=GIT_INFO)
         self.ob = 30000
+        self.optics_dac = {field: 0 for field in _OPTICS_GET_FIELDS.values()}
         self.wd = 11
         self.beam_size = EnumBeamSize.Coarse
         self.bse_cfg = BseInfo()
@@ -1111,6 +1127,28 @@ class RemoteZem(threading.Thread):
             self._send(packet.addr, self.resp_set_ob(packet))
         elif cmd == EnumCmd.SetOBRaw:
             self._send(packet.addr, self.resp_set_ob_raw(packet))
+        elif cmd == EnumCmd.GetAst:
+            self._send(packet.addr, self.builder.build_set(cmd, f"{self.zem_dev.optics_dac['astig_a']},{self.zem_dev.optics_dac['astig_b']}"))
+        elif cmd == EnumCmd.SetAst:
+            try:
+                x, y = packet._parse_2()
+                x, y = validate_ast_dac(int(x)), validate_ast_dac(int(y))
+            except (ValueError, IndexError):
+                self._send(packet.addr, self.builder.build_set(cmd, "Acknowledge,Error Code:1"))
+            else:
+                self.zem_dev.optics_dac.update(astig_a=x, astig_b=y)
+                self._send(packet.addr, self.builder.build_ack(cmd))
+        elif cmd in _OPTICS_GET_FIELDS:
+            value = self.zem_dev.optics_dac[_OPTICS_GET_FIELDS[cmd]] * 100 / 4095
+            self._send(packet.addr, self.builder.build_set(cmd, f"{value:.9g}"))
+        elif cmd in _OPTICS_SET_FIELDS:
+            try:
+                value = validate_optics_percentage(float(packet._parse_1()))
+            except (ValueError, IndexError):
+                self._send(packet.addr, self.builder.build_set(cmd, "Acknowledge,Error Code:1"))
+            else:
+                self.zem_dev.optics_dac[_OPTICS_SET_FIELDS[cmd]] = int(value / 100 * 4095)
+                self._send(packet.addr, self.builder.build_ack(cmd))
         elif cmd == EnumCmd.GetWD:
             self._send(packet.addr, self.builder.build_get_wd(self.zem_dev.wd))
         elif cmd == EnumCmd.SetWD:
@@ -1181,7 +1219,13 @@ class RemoteZem(threading.Thread):
         return self.builder.build_ack(EnumCmd.SetOB)
 
     def resp_set_ob_raw(self, packet: ReqPacket):
-        self.zem_dev.ob = packet.parse_ob()
+        try:
+            value = int(packet._parse_1())
+            if not 0 <= value <= 65535:
+                raise ValueError("OB DAC out of range")
+        except (ValueError, IndexError):
+            return self.builder.build_set(EnumCmd.SetOBRaw, "Acknowledge,Error Code:1")
+        self.zem_dev.ob = value
         return self.builder.build_ack(EnumCmd.SetOBRaw)
 
     def resp_set_hv(self, packet: ReqPacket):

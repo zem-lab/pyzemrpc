@@ -265,6 +265,13 @@ class ZemModel(AppTreeNode):
     wd: float = Field(default=0, on_setattr=True)
     compress_a: float = Field(default=0.0, on_setattr=True)
     compress_b: float = Field(default=0.0, on_setattr=True)
+    ast: Tuple[int, int] | None = Field(default=None, on_setattr=True)
+    stig_x: float | None = Field(default=None, on_setattr=True)
+    stig_y: float | None = Field(default=None, on_setattr=True)
+    up_center_x: float | None = Field(default=None, on_setattr=True)
+    up_center_y: float | None = Field(default=None, on_setattr=True)
+    down_center_x: float | None = Field(default=None, on_setattr=True)
+    down_center_y: float | None = Field(default=None, on_setattr=True)
 
     hv_info: HvInfo = Field(default=None, on_setattr=True)
     is_open_gun: bool = Field(default=False, on_setattr=True)
@@ -1105,6 +1112,82 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
     def get_imaging_mode(self):
         """Read Instrument's mode; never infer it from an objective value."""
         return self.send(self.builder.build_get_imaging_mode()).parse_imaging_mode()
+
+    def get_ast(self) -> Tuple[int, int]:
+        """Read signed A/B astigmatism DAC counts, not percentages."""
+        self.m.ast = self.send(self.builder.build_get_ast()).parse_ast()
+        return self.m.ast
+
+    def set_ast(self, x: int, y: int) -> Tuple[int, int] | None:
+        """Set A/B DAC counts (-4095..4095), then read actual device values."""
+        response = self.send(self.builder.build_set_ast(x, y))
+        if not response.is_ack_ok():
+            return None
+        self.m.ast = self.m.stig_x = self.m.stig_y = None
+        return self.get_ast()
+
+    def _get_optics_percentage(self, request: Request, field: str) -> float:
+        value = self.send(request).parse_optics_percentage()
+        setattr(self.m, field, value)
+        return value
+
+    def _set_optics_percentage(self, request: Request, field: str) -> float | None:
+        response = self.send(request)
+        if not response.is_ack_ok():
+            return None
+        setattr(self.m, field, None)
+        if field in {"stig_x", "stig_y"}:
+            self.m.ast = None
+        # A percentage is quantized to an integer DAC by Instrument.
+        return getattr(self, f"get_{field}")()
+
+    def get_stig_x(self) -> float:
+        """Read astigmatism A as a signed percentage (-100..100)."""
+        return self._get_optics_percentage(self.builder.build_get_stig_x(), "stig_x")
+
+    def set_stig_x(self, value: float) -> float | None:
+        """Set astigmatism A percentage; return the quantized readback."""
+        return self._set_optics_percentage(self.builder.build_set_stig_x(value), "stig_x")
+
+    def get_stig_y(self) -> float:
+        """Read astigmatism B as a signed percentage (-100..100)."""
+        return self._get_optics_percentage(self.builder.build_get_stig_y(), "stig_y")
+
+    def set_stig_y(self, value: float) -> float | None:
+        """Set astigmatism B percentage; return the quantized readback."""
+        return self._set_optics_percentage(self.builder.build_set_stig_y(value), "stig_y")
+
+    def get_up_center_x(self) -> float:
+        """Read upper alignment X percentage (Instrument's AstigBiasC)."""
+        return self._get_optics_percentage(self.builder.build_get_up_center_x(), "up_center_x")
+
+    def set_up_center_x(self, value: float) -> float | None:
+        """Set upper alignment X percentage (-100..100), then read back."""
+        return self._set_optics_percentage(self.builder.build_set_up_center_x(value), "up_center_x")
+
+    def get_up_center_y(self) -> float:
+        """Read upper alignment Y percentage (Instrument's AstigBiasD)."""
+        return self._get_optics_percentage(self.builder.build_get_up_center_y(), "up_center_y")
+
+    def set_up_center_y(self, value: float) -> float | None:
+        """Set upper alignment Y percentage (-100..100), then read back."""
+        return self._set_optics_percentage(self.builder.build_set_up_center_y(value), "up_center_y")
+
+    def get_down_center_x(self) -> float:
+        """Read lower alignment X percentage (DownCenterLens.CenterBiasX)."""
+        return self._get_optics_percentage(self.builder.build_get_down_center_x(), "down_center_x")
+
+    def set_down_center_x(self, value: float) -> float | None:
+        """Set lower alignment X percentage (-100..100), then read back."""
+        return self._set_optics_percentage(self.builder.build_set_down_center_x(value), "down_center_x")
+
+    def get_down_center_y(self) -> float:
+        """Read lower alignment Y percentage (DownCenterLens.CenterBiasY)."""
+        return self._get_optics_percentage(self.builder.build_get_down_center_y(), "down_center_y")
+
+    def set_down_center_y(self, value: float) -> float | None:
+        """Set lower alignment Y percentage (-100..100), then read back."""
+        return self._set_optics_percentage(self.builder.build_set_down_center_y(value), "down_center_y")
 
     def get_scan_relay_mask(self) -> int:
         """Read normal-scan enabled relays: bit0=K1 .. bit3=K4."""

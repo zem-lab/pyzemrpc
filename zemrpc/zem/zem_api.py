@@ -157,11 +157,65 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
         self.device.ensure_connected()
         self.device.send_cmd(cmd, args)
 
+    def get_ob(self) -> int:
+        """Read the current focus handle (OB DAC in normal imaging mode)."""
+        return self.device.get_ob()
+
     def set_ob(self, ob: int, wait_stable_ms=0):
         ret = self.device.set_ob(ob)
         if ret is not None and wait_stable_ms:
             time.sleep(wait_stable_ms / 1000)
         return ret
+
+    def get_ast(self) -> Tuple[int, int]:
+        """Read astigmatism A/B as signed DAC counts."""
+        return self.device.get_ast()
+
+    def set_ast(self, x: int, y: int):
+        """Set both astigmatism DAC values (-4095..4095) and read back."""
+        return self.device.set_ast(x, y)
+
+    def get_stig_x(self):
+        return self.device.get_stig_x()
+
+    def set_stig_x(self, value: float):
+        """Set astigmatism A percentage (-100..100) and read back."""
+        return self.device.set_stig_x(value)
+
+    def get_stig_y(self):
+        return self.device.get_stig_y()
+
+    def set_stig_y(self, value: float):
+        """Set astigmatism B percentage (-100..100) and read back."""
+        return self.device.set_stig_y(value)
+
+    def get_up_center_x(self):
+        return self.device.get_up_center_x()
+
+    def set_up_center_x(self, value: float):
+        """Set upper alignment X percentage (-100..100) and read back."""
+        return self.device.set_up_center_x(value)
+
+    def get_up_center_y(self):
+        return self.device.get_up_center_y()
+
+    def set_up_center_y(self, value: float):
+        """Set upper alignment Y percentage (-100..100) and read back."""
+        return self.device.set_up_center_y(value)
+
+    def get_down_center_x(self):
+        return self.device.get_down_center_x()
+
+    def set_down_center_x(self, value: float):
+        """Set lower alignment X percentage (-100..100) and read back."""
+        return self.device.set_down_center_x(value)
+
+    def get_down_center_y(self):
+        return self.device.get_down_center_y()
+
+    def set_down_center_y(self, value: float):
+        """Set lower alignment Y percentage (-100..100) and read back."""
+        return self.device.set_down_center_y(value)
 
     def get_imaging_mode(self):
         return self.device.get_imaging_mode()

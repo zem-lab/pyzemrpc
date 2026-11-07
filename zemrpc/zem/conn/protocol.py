@@ -7,7 +7,8 @@ import json
 import base64
 import collections
 import ipaddress
-from numbers import Integral
+import math
+from numbers import Integral, Real
 
 from typing import Tuple
 from loguru import logger
@@ -171,8 +172,10 @@ class EnumCmd(Enum):
     SetFisheyeFocus   = "SetFisheyeFocus",              True,  100,      EnumCmdLevel.BASIC,        "设置鱼眼对焦手柄值(0-65535)"
     SetBeamShift      = "SetBeamShift",                 True,  1_000,    EnumCmdLevel.ADVANCED,     "设置样品平面绝对束偏转(um)"
     SetRoiNav         = "SetRoiNav",                    True,  30_000,   EnumCmdLevel.ADVANCED,     "划区导航：居中并改变倍率"
-    GetAST            = "GetAST",                       False, 100,      EnumCmdLevel.BASIC,        "获取像散"
-    SetAST            = "SetAST",                       True,  100,      EnumCmdLevel.ADVANCED,     "设置像散"
+    GetAST            = "GetAst",                       False, 100,      EnumCmdLevel.BASIC,        "获取像散原始DAC"
+    SetAST            = "SetAst",                       True,  100,      EnumCmdLevel.ADVANCED,     "设置像散原始DAC"
+    GetAst            = GetAST  # Keep the old Python names; wire spelling is GetAst/SetAst.
+    SetAst            = SetAST
     GetImgSz          = "GetImgSz",                     False, 100,      EnumCmdLevel.BASIC,        "获取图片尺寸"
     SetImgSz          = "SetImgSz",                     True,  100,      EnumCmdLevel.BASIC,        "设置图片尺寸"
     GetWindowPos      = "GetWindowPos",                 False, 100,      EnumCmdLevel.BASIC,        "获取小窗位置"
@@ -207,6 +210,14 @@ class EnumCmd(Enum):
     GetStigX          = "GetStigX",                     False, 100,      EnumCmdLevel.BASIC,        "获取像散X"
     SetStigY          = "SetStigY",                     True,  100,      EnumCmdLevel.ADVANCED,     "设置像散Y"
     GetStigY          = "GetStigY",                     False, 100,      EnumCmdLevel.BASIC,        "获取像散Y"
+    SetUpCenterX      = "SetUpCenterX",                 True,  100,      EnumCmdLevel.ADVANCED,     "设置上对中X百分比"
+    GetUpCenterX      = "GetUpCenterX",                 False, 100,      EnumCmdLevel.BASIC,        "获取上对中X百分比"
+    SetUpCenterY      = "SetUpCenterY",                 True,  100,      EnumCmdLevel.ADVANCED,     "设置上对中Y百分比"
+    GetUpCenterY      = "GetUpCenterY",                 False, 100,      EnumCmdLevel.BASIC,        "获取上对中Y百分比"
+    SetDownCenterX    = "SetDownCenterX",               True,  100,      EnumCmdLevel.ADVANCED,     "设置下对中X百分比"
+    GetDownCenterX    = "GetDownCenterX",               False, 100,      EnumCmdLevel.BASIC,        "获取下对中X百分比"
+    SetDownCenterY    = "SetDownCenterY",               True,  100,      EnumCmdLevel.ADVANCED,     "设置下对中Y百分比"
+    GetDownCenterY    = "GetDownCenterY",               False, 100,      EnumCmdLevel.BASIC,        "获取下对中Y百分比"
     GetGunVac         = "GetGunVac",                    False, 100,      EnumCmdLevel.BASIC,        "获取枪头真空"
     GetSamVac         = "GetSamVac",                    False, 100,      EnumCmdLevel.BASIC,        "获取样品仓真空"
     AutoFocus         = "AutoFocus",                    False, 100,      EnumCmdLevel.ADVANCED,     "自动对焦"
@@ -324,6 +335,19 @@ class Request(BaseRequest):
             return self.data.decode()
 
 
+def validate_optics_percentage(value: float) -> float:
+    """Signed coil output percentage, not DAC counts or specimen micrometres."""
+    if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value) or not -100 <= value <= 100:
+        raise ValueError("Optics percentage must be a finite number in [-100, 100]")
+    return float(value)
+
+
+def validate_ast_dac(value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, Integral) or not -4095 <= value <= 4095:
+        raise ValueError("Astigmatism DAC must be an integer in [-4095, 4095]")
+    return int(value)
+
+
 class ProtocolBuilder:
     def __init__(self, ip="", port=-1):
         self.ip = ip
@@ -409,6 +433,52 @@ class ProtocolBuilder:
 
     def build_get_ob(self):
         return self.build_get(EnumCmd.GetOB)
+
+    def build_get_ast(self):
+        return self.build_get(EnumCmd.GetAst)
+
+    def build_set_ast(self, x: int, y: int):
+        """Set A/B signed 12-bit DAC values together (not percentages)."""
+        return self.build_set(EnumCmd.SetAst, f"{validate_ast_dac(x)},{validate_ast_dac(y)}")
+
+    def _build_set_optics_percentage(self, cmd: EnumCmd, value: float):
+        return self.build_set(cmd, f"{validate_optics_percentage(value):.9g}")
+
+    def build_get_stig_x(self):
+        return self.build_get(EnumCmd.GetStigX)
+
+    def build_set_stig_x(self, value: float):
+        return self._build_set_optics_percentage(EnumCmd.SetStigX, value)
+
+    def build_get_stig_y(self):
+        return self.build_get(EnumCmd.GetStigY)
+
+    def build_set_stig_y(self, value: float):
+        return self._build_set_optics_percentage(EnumCmd.SetStigY, value)
+
+    def build_get_up_center_x(self):
+        return self.build_get(EnumCmd.GetUpCenterX)
+
+    def build_set_up_center_x(self, value: float):
+        return self._build_set_optics_percentage(EnumCmd.SetUpCenterX, value)
+
+    def build_get_up_center_y(self):
+        return self.build_get(EnumCmd.GetUpCenterY)
+
+    def build_set_up_center_y(self, value: float):
+        return self._build_set_optics_percentage(EnumCmd.SetUpCenterY, value)
+
+    def build_get_down_center_x(self):
+        return self.build_get(EnumCmd.GetDownCenterX)
+
+    def build_set_down_center_x(self, value: float):
+        return self._build_set_optics_percentage(EnumCmd.SetDownCenterX, value)
+
+    def build_get_down_center_y(self):
+        return self.build_get(EnumCmd.GetDownCenterY)
+
+    def build_set_down_center_y(self, value: float):
+        return self._build_set_optics_percentage(EnumCmd.SetDownCenterY, value)
 
     def build_get_imaging_mode(self):
         return self.build_get(EnumCmd.GetImagingMode)
@@ -799,6 +869,24 @@ class RespPacket(BaseResponse):
 
     def parse_ob(self) -> int:
         return int(self._parse_1())
+
+    def parse_ast(self) -> Tuple[int, int]:
+        if self.cmd != EnumCmd.GetAst or self.is_ack() or self.is_error():
+            raise ValueError("Invalid GetAst readback")
+        x, y = self._parse_2()
+        return validate_ast_dac(int(x)), validate_ast_dac(int(y))
+
+    def parse_optics_percentage(self) -> float:
+        if self.is_ack() or self.is_error():
+            raise ValueError("Invalid optics percentage readback")
+        return validate_optics_percentage(float(self._parse_1()))
+
+    parse_stig_x = parse_optics_percentage
+    parse_stig_y = parse_optics_percentage
+    parse_up_center_x = parse_optics_percentage
+    parse_up_center_y = parse_optics_percentage
+    parse_down_center_x = parse_optics_percentage
+    parse_down_center_y = parse_optics_percentage
 
     def parse_imaging_mode(self) -> EnumImagingMode:
         return EnumImagingMode(int(self._parse_1()))
