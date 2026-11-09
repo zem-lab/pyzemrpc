@@ -1,11 +1,94 @@
 # 对焦、像散和对中
 
 接口已经对照 `zeptools.instrument` 的 `ExternModel.cs`、`OpticalModel.cs` 核对。
-以下方法同时提供在 `zem_api` 和 `zem_api.device` 上，使用现有 UDP 协议，
-不需要 JSON-RPC/HTTP 服务。`run_autofocus()` 是 `zem_api` 的等待完成封装；
+像散和对中可以通过 JSON-RPC 控制，并从 `Status` 一次性获取当前值。
+原有 UDP 接口保留。以下接口同时提供在 `zem_api` 和 `zem_api.device` 上。
+`run_autofocus()` 是 `zem_api` 的等待完成封装；
 设备层对应 `set_autofocus()`、`get_autofocus_status()`、`ensure_af_done()`。
 
-## 接口与单位
+## JSON-RPC 像散与对中
+
+| Python 方法 | JSON-RPC method | params（按位置） |
+| --- | --- | --- |
+| `set_astigmatism_rpc(x=None, y=None)` | `SemSetAstigmatism` | `[x, y]`，−100～100 百分比 |
+| `set_alignment_rpc(up_x=…, up_y=…, down_x=…, down_y=…)` | `SemSetAlignment` | `[up_x, up_y, down_x, down_y]`，−100～100 百分比 |
+| `set_ast_rpc(x, y)` | `SemSetAstigmatismDac` | `[x, y]`，−4095～4095 整数 DAC |
+| `status_rpc()` | `Status` | `[]` |
+
+百分比接口只修改指定轴，省略参数或传 `None`（JSON 的 `null`）保持该轴不变，
+至少指定一个轴。数值是绝对值；例如 `x=1` 表示设置到 1%，不是增加 1%。
+像散 X/Y 按设备的 `MaxAstigBiasA/B` 换算，上下对中按正负方向分别使用 Max / |Min|。
+所有参数和配置范围在第一轴写入前完成校验，避免后一轴参数非法导致前一轴已改变。
+电镜端仅在 Idle/VideoPlaying 且电流源可用时接受写入。
+
+三个写入方法都返回完整 `OpticsState`，与 `Status.result.optics` 结构相同：
+
+```json
+{
+  "unit": "percent",
+  "source": "instrument_model",
+  "astigmatism": {"x": 0.0, "y": 0.0, "x_dac": 0, "y_dac": 0},
+  "alignment": {
+    "up": {"x": 0.0, "y": 0.0, "x_dac": 0, "y_dac": 0},
+    "down": {"x": 0.0, "y": 0.0, "x_dac": 0, "y_dac": 0}
+  }
+}
+```
+
+`x/y` 为百分比，`x_dac/y_dac` 为有符号整数 DAC。
+`source=instrument_model` 表示读取电镜当前模型，包括本机 UI 和 UDP 修改后的值，
+不是独立的电流源硬件回读。比例范围无效时对应百分比为 `null`，DAC 值仍保留。
+VirtualZem 返回 `source=virtual_model`，使用同一组 UDP/JSON-RPC 状态。
+旧服务没有 `optics` 字段时，SDK 的 `response.optics` 和对应缓存为 `None`。
+
+### Python 调用
+
+```python
+from zemrpc.zem.zem_api import zem_api
+from zemrpc.zem.models import EnumCmdLevel
+
+# 使用电镜实际提供的 JSON-RPC URL，端口不是固定值。
+# 这组方法直接走 HTTP，不触发 UDP 同步、导航图读取或模式切换。
+zem_api.set_rpc_url("http://192.168.1.100:54321/api/v1/jsonrpc")
+zem_api.device.set_work_mode(EnumCmdLevel.ADVANCED)
+
+state = zem_api.status_rpc().optics
+if state is None:
+    raise RuntimeError("电镜端尚不支持光学状态，请更新电镜软件")
+print("像散百分比:", state.astigmatism.x, state.astigmatism.y)
+print("上对中百分比:", state.alignment.up.x, state.alignment.up.y)
+print("下对中百分比:", state.alignment.down.x, state.alignment.down.y)
+
+# 示例：只设置像散 X 和上对中 Y，其余轴保持不变。
+actual = zem_api.set_astigmatism_rpc(x=1.0)
+actual = zem_api.set_alignment_rpc(up_y=-0.5)
+print(actual.alignment.up.y, actual.alignment.up.y_dac)
+
+# 也可直接设置像散原始 DAC。
+zem_api.set_ast_rpc(100, -200)
+latest = zem_api.status_rpc()
+print(latest.result["optics"])       # JSON 字典
+print(zem_api.device.m.stig_x)        # Status 同步后的百分比缓存
+print(zem_api.device.m.ast)           # Status 同步后的 (A, B) DAC 缓存
+```
+
+如果已经通过 UDP 连接，先调用 `device.get_protocol_ng()` 发现 HTTP 地址即可，
+无需再次手工 `set_rpc_url()`。原有 `get_stig_x()` / `set_stig_x()` 等方法仍使用 UDP；
+JSON-RPC 的读取统一使用 `status_rpc()`。
+
+直接调用 JSON-RPC 的请求示例：
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"SemSetAstigmatism","params":[1.0,null]}
+{"jsonrpc":"2.0","id":2,"method":"SemSetAlignment","params":[null,-0.5,null,null]}
+{"jsonrpc":"2.0","id":3,"method":"Status","params":[]}
+```
+
+SDK 对 JSON-RPC 写入执行已有的 `ADVANCED` 权限检查。远端错误会抛异常，
+不会回退成 UDP 或自动重试。硬件异常可能发生在多轴写入中途；HTTP 超时也不能证明
+命令未执行，此时应重新读取 `Status` 后决定下一步。`RpcCapabilities` 已包含三个新方法的语义与参数描述。
+
+## UDP 接口与单位
 
 | 操作 | Python 方法 | 线上的命令 | 单位 / 实际控制对象 |
 | --- | --- | --- | --- |
@@ -91,6 +174,14 @@ print("自动对焦结果:", d.get_ob())
 ```powershell
 # pyzemrpc 仓库
 .venv/Scripts/python.exe -m pytest tests/test_optics_control.py tests/test_nextg_channel_frames.py -q
+.venv/Scripts/python.exe -m pytest tests/test_optics_jsonrpc.py -q
 # zeptools.instrument 仓库：开发验证构建，不生成交付包
 dotnet run --project src/Test/OpticsProtocolTest/OpticsProtocolTest.csproj -p:GeneratePackageOnBuild=false
+```
+
+`OpticsProtocolTest` 同时检验真实 TouchSocket HTTP 参数绑定和 `Status` 序列化。
+编译后可以从 pyzemrpc 运行跨语言测试，它只启动该假硬件服务，不接受真机地址：
+
+```powershell
+.venv/Scripts/python.exe tests/check_optics_jsonrpc_instrument.py --fixture ../zeptools.instrument/src/Test/OpticsProtocolTest/bin/Debug/net6.0-windows/OpticsProtocolTest.dll
 ```

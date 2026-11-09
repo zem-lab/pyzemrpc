@@ -113,6 +113,31 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
         return self.device.set_timeout_multiplier(timeout_multiplier)
 
     @skip_sync_check
+    def set_rpc_url(self, url: str):
+        """Use JSON-RPC directly without UDP discovery or image synchronization."""
+        return self.device.set_rpc_url(url)
+
+    @skip_sync_check
+    def status_rpc(self):
+        """Read Status, including .optics, and refresh the device model."""
+        return self.device.status_rpc()
+
+    @skip_sync_check
+    def set_astigmatism_rpc(self, x: float | None = None, y: float | None = None):
+        """Set supplied astigmatism percentages and return the optical snapshot."""
+        return self.device.set_astigmatism_rpc(x, y)
+
+    @skip_sync_check
+    def set_ast_rpc(self, x: int, y: int):
+        """Set signed A/B DAC counts through JSON-RPC."""
+        return self.device.set_ast_rpc(x, y)
+
+    @skip_sync_check
+    def set_alignment_rpc(self, *, up_x=None, up_y=None, down_x=None, down_y=None):
+        """Set supplied alignment percentages; omitted axes remain unchanged."""
+        return self.device.set_alignment_rpc(up_x=up_x, up_y=up_y, down_x=down_x, down_y=down_y)
+
+    @skip_sync_check
     def sync(self):
         if self._init_sync_ing:
             return

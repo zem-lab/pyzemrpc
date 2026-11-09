@@ -12,6 +12,8 @@ from jgb.util.pydantic_util import DefaultModel
 from zemrpc.zem.models import Bounds, MetaItem, StagePos, valid_image_bounds
 from zemrpc.zem.scan_relay import validate_scan_relay_mask
 from zemrpc.zem.software_info import SoftwareInfo
+from zemrpc.zem.optics import OpticsState
+from zemrpc.zem.conn.protocol import validate_ast_dac, validate_optics_percentage
 
 
 def _finite_number(value):
@@ -102,15 +104,25 @@ class Status(Req):
 
 class RpcStatusResp(RpcResp):
     @property
+    def state(self) -> dict:
+        """Instrument returns fields directly; old VirtualZem wrapped them in zem."""
+        return self.result.get("zem", self.result)
+
+    @property
+    def optics(self) -> OpticsState | None:
+        value = self.state.get("optics")
+        return None if value is None else OpticsState.model_validate(value)
+
+    @property
     def software(self) -> SoftwareInfo | None:
         """None means the remote server does not report software identity."""
-        value = self.result.get("software")
+        value = self.state.get("software")
         return None if value is None else SoftwareInfo.model_validate(value)
 
     @property
     def scan_relay_mask(self) -> int | None:
         """None means an older server did not report the mask; never assume all enabled."""
-        value = self.result.get("scan_relay_mask")
+        value = self.state.get("scan_relay_mask")
         return None if value is None else validate_scan_relay_mask(value)
 
 
@@ -160,6 +172,21 @@ class JsonRpcBuilder:
 
     def status(self):
         return self._get_dict(Status())
+
+    def set_astigmatism(self, x: float | None = None, y: float | None = None):
+        return self._optics_percent_request("SemSetAstigmatism", [x, y])
+
+    def set_alignment(self, up_x=None, up_y=None, down_x=None, down_y=None):
+        return self._optics_percent_request("SemSetAlignment", [up_x, up_y, down_x, down_y])
+
+    def set_ast_dac(self, x: int, y: int):
+        return self._get_dict(Req(method="SemSetAstigmatismDac", params=[validate_ast_dac(x), validate_ast_dac(y)]))
+
+    def _optics_percent_request(self, method: str, values: list):
+        if all(value is None for value in values):
+            raise ValueError("Specify at least one optics axis")
+        params = [None if value is None else validate_optics_percentage(value) for value in values]
+        return self._get_dict(Req(method=method, params=params))
 
     def get_protocol_ng(self):
         return self._get_dict(GetProtocolNg())

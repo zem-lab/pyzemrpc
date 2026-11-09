@@ -281,6 +281,7 @@ class VirtualZem:
         self.software = SoftwareInfo(version=__version__, commit_id=GIT_INFO)
         self.ob = 30000
         self.optics_dac = {field: 0 for field in _OPTICS_GET_FIELDS.values()}
+        self.optics_lock = threading.RLock()
         self.wd = 11
         self.beam_size = EnumBeamSize.Coarse
         self.bse_cfg = BseInfo()
@@ -331,6 +332,7 @@ class VirtualZem:
             "State": state,
             "scan_relay_mask": self.scan_relay_mask,
             "software": self.software.model_dump(),
+            "optics": self.get_optics_state(),
             "Hv": {
                 "RealAccVol": self.acc_v if self.is_gun_open else 0,
                 "EmissCur": 0.3128,
@@ -384,6 +386,42 @@ class VirtualZem:
             },
             "core": {"da_freq": 40_000_000},
         }
+
+    def get_optics_state(self):
+        def pair(x, y):
+            a, b = self.optics_dac[x], self.optics_dac[y]
+            return {"x": a * 100 / 4095, "y": b * 100 / 4095, "x_dac": a, "y_dac": b}
+
+        with self.optics_lock:
+            return {
+                "unit": "percent", "source": "virtual_model",
+                "astigmatism": pair("astig_a", "astig_b"),
+                "alignment": {"up": pair("astig_c", "astig_d"), "down": pair("down_center_x", "down_center_y")},
+            }
+
+    def _apply_optics_dac(self, values):
+        with self.optics_lock:
+            if self.autofocus_status != EnumAutofocusStatus.Idle:
+                raise RuntimeError("电镜正在自动调节")
+            self.optics_dac.update(values)
+            return self.get_optics_state()
+
+    def set_ast_dac(self, x, y):
+        return self._apply_optics_dac({"astig_a": validate_ast_dac(x), "astig_b": validate_ast_dac(y)})
+
+    def _set_optics_percentages(self, values):
+        if all(value is None for value in values.values()):
+            raise ValueError("Specify at least one optics axis")
+        raw = {field: int(validate_optics_percentage(value) / 100 * 4095)
+               for field, value in values.items() if value is not None}
+        return self._apply_optics_dac(raw)
+
+    def set_astigmatism(self, x=None, y=None):
+        return self._set_optics_percentages({"astig_a": x, "astig_b": y})
+
+    def set_alignment(self, up_x=None, up_y=None, down_x=None, down_y=None):
+        return self._set_optics_percentages({"astig_c": up_x, "astig_d": up_y,
+                                           "down_center_x": down_x, "down_center_y": down_y})
 
 
 @dataclass
@@ -1128,7 +1166,8 @@ class RemoteZem(threading.Thread):
         elif cmd == EnumCmd.SetOBRaw:
             self._send(packet.addr, self.resp_set_ob_raw(packet))
         elif cmd == EnumCmd.GetAst:
-            self._send(packet.addr, self.builder.build_set(cmd, f"{self.zem_dev.optics_dac['astig_a']},{self.zem_dev.optics_dac['astig_b']}"))
+            with self.zem_dev.optics_lock:
+                self._send(packet.addr, self.builder.build_set(cmd, f"{self.zem_dev.optics_dac['astig_a']},{self.zem_dev.optics_dac['astig_b']}"))
         elif cmd == EnumCmd.SetAst:
             try:
                 x, y = packet._parse_2()
@@ -1136,10 +1175,12 @@ class RemoteZem(threading.Thread):
             except (ValueError, IndexError):
                 self._send(packet.addr, self.builder.build_set(cmd, "Acknowledge,Error Code:1"))
             else:
-                self.zem_dev.optics_dac.update(astig_a=x, astig_b=y)
+                with self.zem_dev.optics_lock:
+                    self.zem_dev.optics_dac.update(astig_a=x, astig_b=y)
                 self._send(packet.addr, self.builder.build_ack(cmd))
         elif cmd in _OPTICS_GET_FIELDS:
-            value = self.zem_dev.optics_dac[_OPTICS_GET_FIELDS[cmd]] * 100 / 4095
+            with self.zem_dev.optics_lock:
+                value = self.zem_dev.optics_dac[_OPTICS_GET_FIELDS[cmd]] * 100 / 4095
             self._send(packet.addr, self.builder.build_set(cmd, f"{value:.9g}"))
         elif cmd in _OPTICS_SET_FIELDS:
             try:
@@ -1147,7 +1188,8 @@ class RemoteZem(threading.Thread):
             except (ValueError, IndexError):
                 self._send(packet.addr, self.builder.build_set(cmd, "Acknowledge,Error Code:1"))
             else:
-                self.zem_dev.optics_dac[_OPTICS_SET_FIELDS[cmd]] = int(value / 100 * 4095)
+                with self.zem_dev.optics_lock:
+                    self.zem_dev.optics_dac[_OPTICS_SET_FIELDS[cmd]] = int(value / 100 * 4095)
                 self._send(packet.addr, self.builder.build_ack(cmd))
         elif cmd == EnumCmd.GetWD:
             self._send(packet.addr, self.builder.build_get_wd(self.zem_dev.wd))

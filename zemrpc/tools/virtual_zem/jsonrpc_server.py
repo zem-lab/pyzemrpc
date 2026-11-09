@@ -5,7 +5,7 @@ import cv2
 import base64
 from pydantic import BaseModel
 from fastapi import FastAPI, Request, Response
-from jsonrpcserver import Result, Success, dispatch, method
+from jsonrpcserver import Result, Success, Error, dispatch, method
 
 from zemrpc.tools.virtual_zem.virtual_zem import zem
 
@@ -57,10 +57,31 @@ def Snap(d: dict) -> Result:
 @method
 def Status() -> Result:
     """返回系统状态信息，与Snap中的meta.zem内容相同"""
-    result = {
-        "zem": zem.zem_dev.get_zem_status(),
-    }
-    return Success(result)
+    return Success(zem.zem_dev.get_zem_status())
+
+
+def _change_optics(change, *args):
+    try:
+        return Success(change(*args))
+    except ValueError as exc:
+        return Error(-32602, str(exc))
+    except RuntimeError as exc:
+        return Error(-32000, str(exc))
+
+
+@method
+def SemSetAstigmatism(x=None, y=None) -> Result:
+    return _change_optics(zem.zem_dev.set_astigmatism, x, y)
+
+
+@method
+def SemSetAstigmatismDac(x, y) -> Result:
+    return _change_optics(zem.zem_dev.set_ast_dac, x, y)
+
+
+@method
+def SemSetAlignment(up_x=None, up_y=None, down_x=None, down_y=None) -> Result:
+    return _change_optics(zem.zem_dev.set_alignment, up_x, up_y, down_x, down_y)
 
 
 @app.post("/")
