@@ -3,7 +3,6 @@
 # tr!bf tribf@tribf.com
 
 import cv2
-import math
 import time
 import socket
 import random
@@ -45,7 +44,22 @@ from zemrpc.zem.conn.protocol import (
     BseInfo,
     BseQuadrant,
     EnumBsePhase,
+    validate_ast_dac,
+    validate_optics_percentage,
 )
+
+
+# Raw coil counts shared by GetAst/SetAst and the percentage commands.
+_OPTICS_GET_FIELDS = {
+    EnumCmd.GetStigX: "astig_a", EnumCmd.GetStigY: "astig_b",
+    EnumCmd.GetUpCenterX: "astig_c", EnumCmd.GetUpCenterY: "astig_d",
+    EnumCmd.GetDownCenterX: "down_center_x", EnumCmd.GetDownCenterY: "down_center_y",
+}
+_OPTICS_SET_FIELDS = {
+    EnumCmd.SetStigX: "astig_a", EnumCmd.SetStigY: "astig_b",
+    EnumCmd.SetUpCenterX: "astig_c", EnumCmd.SetUpCenterY: "astig_d",
+    EnumCmd.SetDownCenterX: "down_center_x", EnumCmd.SetDownCenterY: "down_center_y",
+}
 
 
 class ZemRespBuilder:
@@ -267,8 +281,8 @@ class VirtualZem:
         self.software = SoftwareInfo(version=__version__, commit_id=GIT_INFO)
         self.sn = "VIRTUALZEM"
         self.ob = 30000
-        self.ast = [0, 0]
-        self.max_ast = (4095, 4095)
+        self.optics_dac = {field: 0 for field in _OPTICS_GET_FIELDS.values()}
+        self.optics_lock = threading.RLock()
         self.wd = 11
         self.beam_size = EnumBeamSize.Coarse
         self.bse_cfg = BseInfo()
@@ -320,6 +334,7 @@ class VirtualZem:
             "scan_relay_mask": self.scan_relay_mask,
             "sn": self.sn,
             "software": self.software.model_dump(),
+            "optics": self.get_optics_state(),
             "Hv": {
                 "RealAccVol": self.acc_v if self.is_gun_open else 0,
                 "EmissCur": 0.3128,
@@ -373,6 +388,42 @@ class VirtualZem:
             },
             "core": {"da_freq": 40_000_000},
         }
+
+    def get_optics_state(self):
+        def pair(x, y):
+            a, b = self.optics_dac[x], self.optics_dac[y]
+            return {"x": a * 100 / 4095, "y": b * 100 / 4095, "x_dac": a, "y_dac": b}
+
+        with self.optics_lock:
+            return {
+                "unit": "percent", "source": "virtual_model",
+                "astigmatism": pair("astig_a", "astig_b"),
+                "alignment": {"up": pair("astig_c", "astig_d"), "down": pair("down_center_x", "down_center_y")},
+            }
+
+    def _apply_optics_dac(self, values):
+        with self.optics_lock:
+            if self.autofocus_status != EnumAutofocusStatus.Idle:
+                raise RuntimeError("电镜正在自动调节")
+            self.optics_dac.update(values)
+            return self.get_optics_state()
+
+    def set_ast_dac(self, x, y):
+        return self._apply_optics_dac({"astig_a": validate_ast_dac(x), "astig_b": validate_ast_dac(y)})
+
+    def _set_optics_percentages(self, values):
+        if all(value is None for value in values.values()):
+            raise ValueError("Specify at least one optics axis")
+        raw = {field: int(validate_optics_percentage(value) / 100 * 4095)
+               for field, value in values.items() if value is not None}
+        return self._apply_optics_dac(raw)
+
+    def set_astigmatism(self, x=None, y=None):
+        return self._set_optics_percentages({"astig_a": x, "astig_b": y})
+
+    def set_alignment(self, up_x=None, up_y=None, down_x=None, down_y=None):
+        return self._set_optics_percentages({"astig_c": up_x, "astig_d": up_y,
+                                           "down_center_x": down_x, "down_center_y": down_y})
 
 
 @dataclass
@@ -1118,6 +1169,32 @@ class RemoteZem(threading.Thread):
             self._send(packet.addr, self.resp_set_ob(packet))
         elif cmd == EnumCmd.SetOBRaw:
             self._send(packet.addr, self.resp_set_ob_raw(packet))
+        elif cmd == EnumCmd.GetAst:
+            with self.zem_dev.optics_lock:
+                self._send(packet.addr, self.builder.build_set(cmd, f"{self.zem_dev.optics_dac['astig_a']},{self.zem_dev.optics_dac['astig_b']}"))
+        elif cmd == EnumCmd.SetAst:
+            try:
+                x, y = packet._parse_2()
+                x, y = validate_ast_dac(int(x)), validate_ast_dac(int(y))
+            except (ValueError, IndexError):
+                self._send(packet.addr, self.builder.build_set(cmd, "Acknowledge,Error Code:1"))
+            else:
+                with self.zem_dev.optics_lock:
+                    self.zem_dev.optics_dac.update(astig_a=x, astig_b=y)
+                self._send(packet.addr, self.builder.build_ack(cmd))
+        elif cmd in _OPTICS_GET_FIELDS:
+            with self.zem_dev.optics_lock:
+                value = self.zem_dev.optics_dac[_OPTICS_GET_FIELDS[cmd]] * 100 / 4095
+            self._send(packet.addr, self.builder.build_set(cmd, f"{value:.9g}"))
+        elif cmd in _OPTICS_SET_FIELDS:
+            try:
+                value = validate_optics_percentage(float(packet._parse_1()))
+            except (ValueError, IndexError):
+                self._send(packet.addr, self.builder.build_set(cmd, "Acknowledge,Error Code:1"))
+            else:
+                with self.zem_dev.optics_lock:
+                    self.zem_dev.optics_dac[_OPTICS_SET_FIELDS[cmd]] = int(value / 100 * 4095)
+                self._send(packet.addr, self.builder.build_ack(cmd))
         elif cmd == EnumCmd.GetWD:
             self._send(packet.addr, self.builder.build_get_wd(self.zem_dev.wd))
         elif cmd == EnumCmd.SetWD:
@@ -1176,8 +1253,6 @@ class RemoteZem(threading.Thread):
             self._send(packet.addr, self.builder.build_ack(EnumCmd.VideoPlay))
         elif cmd == EnumCmd.ZemRpc:
             self._send(packet.addr, self.resp_json_rpc(packet))
-        elif cmd in (EnumCmd.GetAst, EnumCmd.SetAst, EnumCmd.GetStigX, EnumCmd.GetStigY, EnumCmd.SetStigX, EnumCmd.SetStigY):
-            self._send(packet.addr, self.resp_astigmatism(cmd, packet))
         else:
             self._send(packet.addr, self.builder.build_invalid_command(cmd))
 
@@ -1190,7 +1265,13 @@ class RemoteZem(threading.Thread):
         return self.builder.build_ack(EnumCmd.SetOB)
 
     def resp_set_ob_raw(self, packet: ReqPacket):
-        self.zem_dev.ob = packet.parse_ob()
+        try:
+            value = int(packet._parse_1())
+            if not 0 <= value <= 65535:
+                raise ValueError("OB DAC out of range")
+        except (ValueError, IndexError):
+            return self.builder.build_set(EnumCmd.SetOBRaw, "Acknowledge,Error Code:1")
+        self.zem_dev.ob = value
         return self.builder.build_ack(EnumCmd.SetOBRaw)
 
     def resp_set_hv(self, packet: ReqPacket):
@@ -1233,31 +1314,6 @@ class RemoteZem(threading.Thread):
         else:
             self.zem_dev.pos = [-x, -y]
         return self.builder.build_ack(EnumCmd.SetStagePos)
-
-    def resp_astigmatism(self, cmd: EnumCmd, packet: ReqPacket):
-        # Mirrors Instrument ExternModel: SetAst stores raw codes unclamped,
-        # SetStigX/Y clamps to ±100 % and truncates toward zero.
-        ast = self.zem_dev.ast
-        if cmd == EnumCmd.GetAst:
-            return self.builder.build_set(cmd, f"{ast[0]},{ast[1]}")
-        if cmd == EnumCmd.SetAst:
-            try:
-                a, b = (int(v) for v in packet._parse_1().split(","))
-            except (ValueError, IndexError):
-                return self.builder.build_set(cmd, "Acknowledge,Error Code:1")
-            ast[0], ast[1] = a, b
-            return self.builder.build_ack(cmd)
-        i = 0 if cmd in (EnumCmd.GetStigX, EnumCmd.SetStigX) else 1
-        if cmd in (EnumCmd.GetStigX, EnumCmd.GetStigY):
-            return self.builder.build_set(cmd, f"{ast[i] * 100.0 / self.zem_dev.max_ast[i]}")
-        try:
-            value = float(packet._parse_1())
-        except (ValueError, IndexError):
-            return self.builder.build_set(cmd, "Acknowledge,Error Code:2")
-        if not math.isfinite(value):
-            return self.builder.build_set(cmd, "Acknowledge,Error Code:2")
-        ast[i] = int(max(-100.0, min(100.0, value)) / 100.0 * self.zem_dev.max_ast[i])
-        return self.builder.build_ack(cmd)
 
     def resp_json_rpc(self, packet: ReqPacket):
         return self.rpc_server.process_json_rpc(packet)

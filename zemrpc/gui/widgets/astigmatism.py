@@ -2,14 +2,22 @@
 from qtpy.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel, QPushButton, QDoubleSpinBox, QSpinBox, QPlainTextEdit
 from jgb.gui.qt.qt_model import QTrigger
 from jgb.util.async_task import AsyncTask
-from zemrpc.zem.astigmatism import AST_RAW_LIMIT, STIG_PCT_LIMIT
 from zemrpc.zem.context import ctx
 from zemrpc.zem.zem_api import zem_api
 from zemrpc.zem.models import format_exception_for_ui
 
+# Same limits as validate_ast_dac / validate_optics_percentage in the protocol layer.
+AST_DAC_LIMIT = 4095
+STIG_PCT_LIMIT = 100.0
+
 
 def read_astigmatism(device):
     return {"ast": device.get_ast(), "x": device.get_stig_x(), "y": device.get_stig_y()}
+
+
+def set_stig(device, axis, value):
+    if getattr(device, f"set_stig_{axis}")(value) is None:
+        raise ValueError(f"设备未确认 SetStig{axis.upper()}")
 
 
 class AstigmatismTab(QWidget):
@@ -18,7 +26,7 @@ class AstigmatismTab(QWidget):
         self.trigger = QTrigger(True)
         self.busy = False
         layout = QVBoxLayout(self)
-        info = QLabel("UDP 外部接口 · 像散 A/B 即图像 X/Y。百分比相对电镜配置的 MaxAstigBiasA/B，DAC 原值直接写入线圈、电镜不限幅。"
+        info = QLabel("UDP 外部接口 · 像散 A/B 即图像 X/Y。百分比相对电镜配置的 MaxAstigBiasA/B，DAC 原值直接写入线圈。"
                       "两种写法作用于同一对线圈，后写覆盖先写。设置需要高级工作模式；修改数值不发送命令。")
         info.setWordWrap(True)
         layout.addWidget(info)
@@ -54,12 +62,12 @@ class AstigmatismTab(QWidget):
         grid.addWidget(self.set_pct, 2, 2, 1, 2)
         layout.addWidget(pct)
 
-        raw = QGroupBox("DAC 原值（GetAst · SetAst，带符号整数）")
+        raw = QGroupBox(f"DAC 原值（GetAst · SetAst，−{AST_DAC_LIMIT}～{AST_DAC_LIMIT}）")
         raw_row = QHBoxLayout(raw)
         self.raw = {}
         for name in ("A", "B"):
             spin = QSpinBox()
-            spin.setRange(-AST_RAW_LIMIT, AST_RAW_LIMIT)
+            spin.setRange(-AST_DAC_LIMIT, AST_DAC_LIMIT)
             spin.setKeyboardTracking(False)
             self.raw[name] = spin
             raw_row.addWidget(QLabel(name))
@@ -94,9 +102,8 @@ class AstigmatismTab(QWidget):
         x, y = self.pct["x"].value(), self.pct["y"].value()
 
         def operation(device):
-            for axis, value in (("x", x), ("y", y)):
-                if device.set_stig(axis, value) is None:
-                    raise ValueError(f"设备未确认 SetStig{axis.upper()}")
+            set_stig(device, "x", x)
+            set_stig(device, "y", y)
             return read_astigmatism(device)
 
         self.run(f"设置 X={x:g} %、Y={y:g} %", operation)
@@ -115,9 +122,8 @@ class AstigmatismTab(QWidget):
         delta = sign * self.pct_step.value()
 
         def operation(device):
-            target = max(-STIG_PCT_LIMIT, min(STIG_PCT_LIMIT, device.get_stig(axis) + delta))
-            if device.set_stig(axis, target) is None:
-                raise ValueError(f"设备未确认 SetStig{axis.upper()}")
+            current = getattr(device, f"get_stig_{axis}")()
+            set_stig(device, axis, max(-STIG_PCT_LIMIT, min(STIG_PCT_LIMIT, current + delta)))
             return read_astigmatism(device)
 
         self.run(f"{axis.upper()} 步进 {delta:+g} %", operation)

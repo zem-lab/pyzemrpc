@@ -113,6 +113,31 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
         return self.device.set_timeout_multiplier(timeout_multiplier)
 
     @skip_sync_check
+    def set_rpc_url(self, url: str):
+        """Use JSON-RPC directly without UDP discovery or image synchronization."""
+        return self.device.set_rpc_url(url)
+
+    @skip_sync_check
+    def status_rpc(self):
+        """Read Status, including .optics, and refresh the device model."""
+        return self.device.status_rpc()
+
+    @skip_sync_check
+    def set_astigmatism_rpc(self, x: float | None = None, y: float | None = None):
+        """Set supplied astigmatism percentages and return the optical snapshot."""
+        return self.device.set_astigmatism_rpc(x, y)
+
+    @skip_sync_check
+    def set_ast_rpc(self, x: int, y: int):
+        """Set signed A/B DAC counts through JSON-RPC."""
+        return self.device.set_ast_rpc(x, y)
+
+    @skip_sync_check
+    def set_alignment_rpc(self, *, up_x=None, up_y=None, down_x=None, down_y=None):
+        """Set supplied alignment percentages; omitted axes remain unchanged."""
+        return self.device.set_alignment_rpc(up_x=up_x, up_y=up_y, down_x=down_x, down_y=down_y)
+
+    @skip_sync_check
     def sync(self):
         if self._init_sync_ing:
             return
@@ -157,11 +182,65 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
         self.device.ensure_connected()
         self.device.send_cmd(cmd, args)
 
+    def get_ob(self) -> int:
+        """Read the current focus handle (OB DAC in normal imaging mode)."""
+        return self.device.get_ob()
+
     def set_ob(self, ob: int, wait_stable_ms=0):
         ret = self.device.set_ob(ob)
         if ret is not None and wait_stable_ms:
             time.sleep(wait_stable_ms / 1000)
         return ret
+
+    def get_ast(self) -> Tuple[int, int]:
+        """Read astigmatism A/B as signed DAC counts."""
+        return self.device.get_ast()
+
+    def set_ast(self, x: int, y: int):
+        """Set both astigmatism DAC values (-4095..4095) and read back."""
+        return self.device.set_ast(x, y)
+
+    def get_stig_x(self):
+        return self.device.get_stig_x()
+
+    def set_stig_x(self, value: float):
+        """Set astigmatism A percentage (-100..100) and read back."""
+        return self.device.set_stig_x(value)
+
+    def get_stig_y(self):
+        return self.device.get_stig_y()
+
+    def set_stig_y(self, value: float):
+        """Set astigmatism B percentage (-100..100) and read back."""
+        return self.device.set_stig_y(value)
+
+    def get_up_center_x(self):
+        return self.device.get_up_center_x()
+
+    def set_up_center_x(self, value: float):
+        """Set upper alignment X percentage (-100..100) and read back."""
+        return self.device.set_up_center_x(value)
+
+    def get_up_center_y(self):
+        return self.device.get_up_center_y()
+
+    def set_up_center_y(self, value: float):
+        """Set upper alignment Y percentage (-100..100) and read back."""
+        return self.device.set_up_center_y(value)
+
+    def get_down_center_x(self):
+        return self.device.get_down_center_x()
+
+    def set_down_center_x(self, value: float):
+        """Set lower alignment X percentage (-100..100) and read back."""
+        return self.device.set_down_center_x(value)
+
+    def get_down_center_y(self):
+        return self.device.get_down_center_y()
+
+    def set_down_center_y(self, value: float):
+        """Set lower alignment Y percentage (-100..100) and read back."""
+        return self.device.set_down_center_y(value)
 
     def get_imaging_mode(self):
         return self.device.get_imaging_mode()
@@ -198,24 +277,6 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
 
     def set_fisheye_focus(self, value: int, wait_stable_ms=0):
         ret = self.device.set_fisheye_focus(value)
-        if ret is not None and wait_stable_ms:
-            time.sleep(wait_stable_ms / 1000)
-        return ret
-
-    def get_ast(self):
-        return self.device.get_ast()
-
-    def set_ast(self, a: int, b: int, wait_stable_ms=0):
-        ret = self.device.set_ast(a, b)
-        if ret is not None and wait_stable_ms:
-            time.sleep(wait_stable_ms / 1000)
-        return ret
-
-    def get_stig(self, axis: str):
-        return self.device.get_stig(axis)
-
-    def set_stig(self, axis: str, value: float, wait_stable_ms=0):
-        ret = self.device.set_stig(axis, value)
         if ret is not None and wait_stable_ms:
             time.sleep(wait_stable_ms / 1000)
         return ret

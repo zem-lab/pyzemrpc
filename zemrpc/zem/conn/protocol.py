@@ -4,18 +4,17 @@
 
 import re
 import json
-import math
 import base64
 import collections
 import ipaddress
-from numbers import Integral
+import math
+from numbers import Integral, Real
 
 from typing import Tuple
 from loguru import logger
 from enum import Enum
 from dataclasses import dataclass
 from zemrpc.zem.scan_relay import validate_scan_relay_mask
-from zemrpc.zem.astigmatism import validate_ast_raw, validate_stig_pct
 from zemrpc.zem.software_info import SoftwareInfo
 
 from jgb.util import math_util, json_util
@@ -175,8 +174,10 @@ class EnumCmd(Enum):
     SetFisheyeFocus   = "SetFisheyeFocus",              True,  100,      EnumCmdLevel.BASIC,        "设置鱼眼对焦手柄值(0-65535)"
     SetBeamShift      = "SetBeamShift",                 True,  1_000,    EnumCmdLevel.ADVANCED,     "设置样品平面绝对束偏转(um)"
     SetRoiNav         = "SetRoiNav",                    True,  30_000,   EnumCmdLevel.ADVANCED,     "划区导航：居中并改变倍率"
-    GetAst            = "GetAst",                       False, 100,      EnumCmdLevel.BASIC,        "获取像散A/B DAC值"
-    SetAst            = "SetAst",                       True,  100,      EnumCmdLevel.ADVANCED,     "设置像散A/B DAC值"
+    GetAST            = "GetAst",                       False, 100,      EnumCmdLevel.BASIC,        "获取像散原始DAC"
+    SetAST            = "SetAst",                       True,  100,      EnumCmdLevel.ADVANCED,     "设置像散原始DAC"
+    GetAst            = GetAST  # Keep the old Python names; wire spelling is GetAst/SetAst.
+    SetAst            = SetAST
     GetImgSz          = "GetImgSz",                     False, 100,      EnumCmdLevel.BASIC,        "获取图片尺寸"
     SetImgSz          = "SetImgSz",                     True,  100,      EnumCmdLevel.BASIC,        "设置图片尺寸"
     GetWindowPos      = "GetWindowPos",                 False, 100,      EnumCmdLevel.BASIC,        "获取小窗位置"
@@ -207,10 +208,18 @@ class EnumCmd(Enum):
     GetPixelSz        = "GetPixelSz",                   False, 100,      EnumCmdLevel.BASIC,        "获取像素尺寸um"
     RequestOpenVac    = "RequestOpenVac",               False, 100,      EnumCmdLevel.ADVANCED,     "请求结束换样" 
     RequestCloseVac   = "RequestCloseVac",              False, 100,      EnumCmdLevel.ADVANCED,     "请求开始换样"
-    SetStigX          = "SetStigX",                     True,  100,      EnumCmdLevel.ADVANCED,     "设置像散X百分比"
-    GetStigX          = "GetStigX",                     False, 100,      EnumCmdLevel.BASIC,        "获取像散X百分比"
-    SetStigY          = "SetStigY",                     True,  100,      EnumCmdLevel.ADVANCED,     "设置像散Y百分比"
-    GetStigY          = "GetStigY",                     False, 100,      EnumCmdLevel.BASIC,        "获取像散Y百分比"
+    SetStigX          = "SetStigX",                     True,  100,      EnumCmdLevel.ADVANCED,     "设置像散X"
+    GetStigX          = "GetStigX",                     False, 100,      EnumCmdLevel.BASIC,        "获取像散X"
+    SetStigY          = "SetStigY",                     True,  100,      EnumCmdLevel.ADVANCED,     "设置像散Y"
+    GetStigY          = "GetStigY",                     False, 100,      EnumCmdLevel.BASIC,        "获取像散Y"
+    SetUpCenterX      = "SetUpCenterX",                 True,  100,      EnumCmdLevel.ADVANCED,     "设置上对中X百分比"
+    GetUpCenterX      = "GetUpCenterX",                 False, 100,      EnumCmdLevel.BASIC,        "获取上对中X百分比"
+    SetUpCenterY      = "SetUpCenterY",                 True,  100,      EnumCmdLevel.ADVANCED,     "设置上对中Y百分比"
+    GetUpCenterY      = "GetUpCenterY",                 False, 100,      EnumCmdLevel.BASIC,        "获取上对中Y百分比"
+    SetDownCenterX    = "SetDownCenterX",               True,  100,      EnumCmdLevel.ADVANCED,     "设置下对中X百分比"
+    GetDownCenterX    = "GetDownCenterX",               False, 100,      EnumCmdLevel.BASIC,        "获取下对中X百分比"
+    SetDownCenterY    = "SetDownCenterY",               True,  100,      EnumCmdLevel.ADVANCED,     "设置下对中Y百分比"
+    GetDownCenterY    = "GetDownCenterY",               False, 100,      EnumCmdLevel.BASIC,        "获取下对中Y百分比"
     GetGunVac         = "GetGunVac",                    False, 100,      EnumCmdLevel.BASIC,        "获取枪头真空"
     GetSamVac         = "GetSamVac",                    False, 100,      EnumCmdLevel.BASIC,        "获取样品仓真空"
     AutoFocus         = "AutoFocus",                    False, 100,      EnumCmdLevel.ADVANCED,     "自动对焦"
@@ -264,12 +273,6 @@ class EnumCmd(Enum):
         return self.value[-1]
 
 # fmt: on
-
-
-def _stig_cmd(prefix: str, axis: str) -> EnumCmd:
-    if axis not in ("x", "y"):
-        raise ValueError("Stigmator axis must be 'x' or 'y'")
-    return EnumCmd[f"{prefix}Stig{axis.upper()}"]
 
 
 class EnumStatus(Enum):
@@ -333,6 +336,19 @@ class Request(BaseRequest):
             return f"{parts[0][:8]}:{payload},{','.join(parts[1:])}"
         else:
             return self.data.decode()
+
+
+def validate_optics_percentage(value: float) -> float:
+    """Signed coil output percentage, not DAC counts or specimen micrometres."""
+    if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value) or not -100 <= value <= 100:
+        raise ValueError("Optics percentage must be a finite number in [-100, 100]")
+    return float(value)
+
+
+def validate_ast_dac(value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, Integral) or not -4095 <= value <= 4095:
+        raise ValueError("Astigmatism DAC must be an integer in [-4095, 4095]")
+    return int(value)
 
 
 class ProtocolBuilder:
@@ -420,6 +436,52 @@ class ProtocolBuilder:
 
     def build_get_ob(self):
         return self.build_get(EnumCmd.GetOB)
+
+    def build_get_ast(self):
+        return self.build_get(EnumCmd.GetAst)
+
+    def build_set_ast(self, x: int, y: int):
+        """Set A/B signed 12-bit DAC values together (not percentages)."""
+        return self.build_set(EnumCmd.SetAst, f"{validate_ast_dac(x)},{validate_ast_dac(y)}")
+
+    def _build_set_optics_percentage(self, cmd: EnumCmd, value: float):
+        return self.build_set(cmd, f"{validate_optics_percentage(value):.9g}")
+
+    def build_get_stig_x(self):
+        return self.build_get(EnumCmd.GetStigX)
+
+    def build_set_stig_x(self, value: float):
+        return self._build_set_optics_percentage(EnumCmd.SetStigX, value)
+
+    def build_get_stig_y(self):
+        return self.build_get(EnumCmd.GetStigY)
+
+    def build_set_stig_y(self, value: float):
+        return self._build_set_optics_percentage(EnumCmd.SetStigY, value)
+
+    def build_get_up_center_x(self):
+        return self.build_get(EnumCmd.GetUpCenterX)
+
+    def build_set_up_center_x(self, value: float):
+        return self._build_set_optics_percentage(EnumCmd.SetUpCenterX, value)
+
+    def build_get_up_center_y(self):
+        return self.build_get(EnumCmd.GetUpCenterY)
+
+    def build_set_up_center_y(self, value: float):
+        return self._build_set_optics_percentage(EnumCmd.SetUpCenterY, value)
+
+    def build_get_down_center_x(self):
+        return self.build_get(EnumCmd.GetDownCenterX)
+
+    def build_set_down_center_x(self, value: float):
+        return self._build_set_optics_percentage(EnumCmd.SetDownCenterX, value)
+
+    def build_get_down_center_y(self):
+        return self.build_get(EnumCmd.GetDownCenterY)
+
+    def build_set_down_center_y(self, value: float):
+        return self._build_set_optics_percentage(EnumCmd.SetDownCenterY, value)
 
     def build_get_imaging_mode(self):
         return self.build_get(EnumCmd.GetImagingMode)
@@ -589,18 +651,6 @@ class ProtocolBuilder:
 
     def build_get_compress_b(self):
         return self.build_get(EnumCmd.GetCompressB)
-
-    def build_get_ast(self):
-        return self.build_get(EnumCmd.GetAst)
-
-    def build_set_ast(self, a: int, b: int):
-        return self.build_set(EnumCmd.SetAst, f"{validate_ast_raw(a)},{validate_ast_raw(b)}")
-
-    def build_get_stig(self, axis: str):
-        return self.build_get(_stig_cmd("Get", axis))
-
-    def build_set_stig(self, axis: str, value: float):
-        return self.build_set(_stig_cmd("Set", axis), f"{validate_stig_pct(value):.6f}")
 
     def build_open_vac(self):
         return self.build_get(EnumCmd.OpenVAC)
@@ -843,6 +893,24 @@ class RespPacket(BaseResponse):
     def parse_ob(self) -> int:
         return int(self._parse_1())
 
+    def parse_ast(self) -> Tuple[int, int]:
+        if self.cmd != EnumCmd.GetAst or self.is_ack() or self.is_error():
+            raise ValueError("Invalid GetAst readback")
+        x, y = self._parse_2()
+        return validate_ast_dac(int(x)), validate_ast_dac(int(y))
+
+    def parse_optics_percentage(self) -> float:
+        if self.is_ack() or self.is_error():
+            raise ValueError("Invalid optics percentage readback")
+        return validate_optics_percentage(float(self._parse_1()))
+
+    parse_stig_x = parse_optics_percentage
+    parse_stig_y = parse_optics_percentage
+    parse_up_center_x = parse_optics_percentage
+    parse_up_center_y = parse_optics_percentage
+    parse_down_center_x = parse_optics_percentage
+    parse_down_center_y = parse_optics_percentage
+
     def parse_imaging_mode(self) -> EnumImagingMode:
         return EnumImagingMode(int(self._parse_1()))
 
@@ -925,16 +993,6 @@ class RespPacket(BaseResponse):
 
     def parse_compress_b(self) -> float:
         return float(self._parse_1())
-
-    def parse_ast(self) -> Tuple[int, int]:
-        a, b = self._parse_2()
-        return int(a), int(b)
-
-    def parse_stig(self) -> float:
-        value = float(self._parse_1())
-        if not math.isfinite(value):
-            raise ValueError("Invalid stigmator percentage readback")
-        return value
 
     def _parse_1(self):
         req, val, crc = self._re_1.findall(self.data_str)[0]

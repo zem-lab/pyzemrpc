@@ -6,7 +6,7 @@
 
 新增 [扫描档位使能掩码](docs/scan_relay_mask.md)：UDP 设置/查询、JSON-RPC 状态读回；掩码 7 禁用 K4，15 恢复全部档位。
 
-新增 [像散接口](docs/astigmatism.md)：X/Y 百分比与 A/B DAC 原值的读写及设置后读回，上位机增加“像散”页；修正原值命令名为 `GetAst` / `SetAst`。
+[对焦、像散和对中接口](docs/optics_control.md)：JSON-RPC 像散/上下对中控制与 `Status.optics` 当前值，以及物镜 DAC、自动对焦和原有 UDP 调用示例；上位机“像散”页手动读写 X/Y 百分比与 A/B DAC。
 
 **ZEM远程控制接口（python版本）**
 

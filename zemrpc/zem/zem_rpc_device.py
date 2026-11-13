@@ -38,6 +38,7 @@ from jgb.conn.udp_socket import UdpSocket, UdpPacket
 
 from zemrpc import app_cfg
 from zemrpc.zem.software_info import SoftwareInfo
+from zemrpc.zem.optics import OpticsState, update_optics_model
 from zemrpc.zem.context import ctx
 from zemrpc.zem.conn.img_receiver import ImgReceiver, ImageTransferError
 from zemrpc.zem.models import EnumBeamSize, FieldWithLoc, HvInfo, ImageMeta, MetaItem, NavParam, ScanInfo, SnapArgs, StagePos, ZemException, BseInfo, EnumCmdLevel
@@ -51,6 +52,16 @@ def _retry_pubsub_request(retry_state):
     """Acquisition/navigation writes have no request ID; never replay an ambiguous result."""
     request = retry_state.args[1] if len(retry_state.args) > 1 else retry_state.kwargs["req"]
     return retry_state.outcome.failed and request.cmd not in {EnumCmd.Snap, EnumCmd.SetRoiNav, EnumCmd.SetStagePos, EnumCmd.SetStageMotionParameters, EnumCmd.GetStageMotionParameters} and not isinstance(retry_state.outcome.exception(), CancelledError)
+
+
+def _rpc_result(data) -> dict:
+    if not isinstance(data, dict):
+        raise ZemException.request_error("Invalid JSON-RPC response")
+    if data.get("error"):
+        raise ZemException.request_error(f"JSON-RPC: {data['error']}")
+    if not isinstance(data.get("result"), dict):
+        raise ZemException.request_error("JSON-RPC response is missing an object result")
+    return data["result"]
 
 
 class HandshakePubSub(PubSub):
@@ -267,8 +278,13 @@ class ZemModel(AppTreeNode):
     compress_a: float = Field(default=0.0, on_setattr=True)
     compress_b: float = Field(default=0.0, on_setattr=True)
     ast: Tuple[int, int] | None = Field(default=None, on_setattr=True)
+    optics: OpticsState | None = Field(default=None, json_schema_extra={"on_setattr": True})
     stig_x: float | None = Field(default=None, on_setattr=True)
     stig_y: float | None = Field(default=None, on_setattr=True)
+    up_center_x: float | None = Field(default=None, on_setattr=True)
+    up_center_y: float | None = Field(default=None, on_setattr=True)
+    down_center_x: float | None = Field(default=None, on_setattr=True)
+    down_center_y: float | None = Field(default=None, on_setattr=True)
 
     hv_info: HvInfo = Field(default=None, on_setattr=True)
     is_open_gun: bool = Field(default=False, on_setattr=True)
@@ -703,13 +719,17 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         Check device status using RPC protocol.
 
         Returns:
-            dict: Status information from the device
+            RpcStatusResp: Status and typed optical state from the device
         """
         data = self.zem_rpc(self.rpc_builder.status())
-        response = RpcStatusResp(**data)
-        self.m.scan_relay_mask = response.scan_relay_mask
-        self.m.software = response.software
-        self.m.sn = response.sn
+        _rpc_result(data)
+        response = RpcStatusResp(**{**data, "error": data.get("error") or {}})
+        # Validate the whole snapshot before updating any cache fields.
+        mask, software, sn, optics = response.scan_relay_mask, response.software, response.sn, response.optics
+        self.m.scan_relay_mask = mask
+        self.m.software = software
+        self.m.sn = sn
+        update_optics_model(self.m, optics)
         return response
 
     def json_rpc(self, method, params=None, *, timeout=20):
@@ -749,6 +769,38 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         if transport != "udp":
             raise ValueError("transport 仅支持 jsonrpc/udp")
         return self.send(self.builder.build_set_stage_motion_parameters(axes)).parse_stage_motion_parameters(axes)
+
+    def set_rpc_url(self, url: str):
+        """Configure an HTTP JSON-RPC endpoint without UDP discovery or sync."""
+        from urllib.parse import urlsplit
+
+        if not isinstance(url, str):
+            raise ValueError("JSON-RPC URL must be an absolute HTTP(S) URL")
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.fragment:
+            raise ValueError("JSON-RPC URL must be an absolute HTTP(S) URL")
+        _ = parsed.port  # Reject invalid port syntax before replacing the endpoint.
+        self.m.protocol_ng = RespProtocolNg(name="ZEMRPC-HTTP", url=url)
+        update_optics_model(self.m, None)
+
+    def _set_optics_rpc(self, request: dict, permission: EnumCmd) -> OpticsState:
+        self._check_cmd_permission(permission)
+        # No automatic retry or UDP fallback: a lost response may follow a write.
+        optics = OpticsState.model_validate(_rpc_result(self.zem_rpc(request)))
+        update_optics_model(self.m, optics)
+        return optics
+
+    def set_astigmatism_rpc(self, x: float | None = None, y: float | None = None) -> OpticsState:
+        """Set supplied astigmatism axes in percent; None leaves an axis unchanged."""
+        return self._set_optics_rpc(self.rpc_builder.set_astigmatism(x, y), EnumCmd.SetAST)
+
+    def set_ast_rpc(self, x: int, y: int) -> OpticsState:
+        """Set both signed astigmatism DAC counts and return the optical snapshot."""
+        return self._set_optics_rpc(self.rpc_builder.set_ast_dac(x, y), EnumCmd.SetAST)
+
+    def set_alignment_rpc(self, *, up_x=None, up_y=None, down_x=None, down_y=None) -> OpticsState:
+        """Set supplied upper/lower alignment axes in percent via JSON-RPC."""
+        return self._set_optics_rpc(self.rpc_builder.set_alignment(up_x, up_y, down_x, down_y), EnumCmd.SetUpCenterX)
 
     def get_nav_param(self) -> NavParam:
         """
@@ -1160,6 +1212,84 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         """Read Instrument's mode; never infer it from an objective value."""
         return self.send(self.builder.build_get_imaging_mode()).parse_imaging_mode()
 
+    def get_ast(self) -> Tuple[int, int]:
+        """Read signed A/B astigmatism DAC counts, not percentages."""
+        self.m.ast = self.send(self.builder.build_get_ast()).parse_ast()
+        return self.m.ast
+
+    def set_ast(self, x: int, y: int) -> Tuple[int, int] | None:
+        """Set A/B DAC counts (-4095..4095), then read actual device values."""
+        response = self.send(self.builder.build_set_ast(x, y))
+        if not response.is_ack_ok():
+            return None
+        self.m.optics = None
+        self.m.ast = self.m.stig_x = self.m.stig_y = None
+        return self.get_ast()
+
+    def _get_optics_percentage(self, request: Request, field: str) -> float:
+        value = self.send(request).parse_optics_percentage()
+        setattr(self.m, field, value)
+        return value
+
+    def _set_optics_percentage(self, request: Request, field: str) -> float | None:
+        response = self.send(request)
+        if not response.is_ack_ok():
+            return None
+        self.m.optics = None
+        setattr(self.m, field, None)
+        if field in {"stig_x", "stig_y"}:
+            self.m.ast = None
+        # A percentage is quantized to an integer DAC by Instrument.
+        return getattr(self, f"get_{field}")()
+
+    def get_stig_x(self) -> float:
+        """Read astigmatism A as a signed percentage (-100..100)."""
+        return self._get_optics_percentage(self.builder.build_get_stig_x(), "stig_x")
+
+    def set_stig_x(self, value: float) -> float | None:
+        """Set astigmatism A percentage; return the quantized readback."""
+        return self._set_optics_percentage(self.builder.build_set_stig_x(value), "stig_x")
+
+    def get_stig_y(self) -> float:
+        """Read astigmatism B as a signed percentage (-100..100)."""
+        return self._get_optics_percentage(self.builder.build_get_stig_y(), "stig_y")
+
+    def set_stig_y(self, value: float) -> float | None:
+        """Set astigmatism B percentage; return the quantized readback."""
+        return self._set_optics_percentage(self.builder.build_set_stig_y(value), "stig_y")
+
+    def get_up_center_x(self) -> float:
+        """Read upper alignment X percentage (Instrument's AstigBiasC)."""
+        return self._get_optics_percentage(self.builder.build_get_up_center_x(), "up_center_x")
+
+    def set_up_center_x(self, value: float) -> float | None:
+        """Set upper alignment X percentage (-100..100), then read back."""
+        return self._set_optics_percentage(self.builder.build_set_up_center_x(value), "up_center_x")
+
+    def get_up_center_y(self) -> float:
+        """Read upper alignment Y percentage (Instrument's AstigBiasD)."""
+        return self._get_optics_percentage(self.builder.build_get_up_center_y(), "up_center_y")
+
+    def set_up_center_y(self, value: float) -> float | None:
+        """Set upper alignment Y percentage (-100..100), then read back."""
+        return self._set_optics_percentage(self.builder.build_set_up_center_y(value), "up_center_y")
+
+    def get_down_center_x(self) -> float:
+        """Read lower alignment X percentage (DownCenterLens.CenterBiasX)."""
+        return self._get_optics_percentage(self.builder.build_get_down_center_x(), "down_center_x")
+
+    def set_down_center_x(self, value: float) -> float | None:
+        """Set lower alignment X percentage (-100..100), then read back."""
+        return self._set_optics_percentage(self.builder.build_set_down_center_x(value), "down_center_x")
+
+    def get_down_center_y(self) -> float:
+        """Read lower alignment Y percentage (DownCenterLens.CenterBiasY)."""
+        return self._get_optics_percentage(self.builder.build_get_down_center_y(), "down_center_y")
+
+    def set_down_center_y(self, value: float) -> float | None:
+        """Set lower alignment Y percentage (-100..100), then read back."""
+        return self._set_optics_percentage(self.builder.build_set_down_center_y(value), "down_center_y")
+
     def get_scan_relay_mask(self) -> int:
         """Read normal-scan enabled relays: bit0=K1 .. bit3=K4."""
         value = self.send(self.builder.build_get_scan_relay_mask()).parse_scan_relay_mask()
@@ -1380,47 +1510,6 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         self.m.compress_b = resp.parse_compress_b()
         return self.m.compress_b
 
-    def get_ast(self) -> Tuple[int, int]:
-        """Read stigmator A/B (image X/Y) as signed DAC codes."""
-        self.m.ast = self.send(self.builder.build_get_ast()).parse_ast()
-        return self.m.ast
-
-    def set_ast(self, a: int, b: int):
-        """Write both stigmator DAC codes; return the device readback or None.
-
-        The instrument writes the codes without clamping them to its configured
-        Min/MaxAstigBias range, so callers own the physical limit.
-        """
-        resp = self.send(self.builder.build_set_ast(a, b))
-        return self.get_ast() if resp.is_ack_ok() else None
-
-    def get_stig(self, axis: str) -> float:
-        """Read stigmator X or Y as a percentage of MaxAstigBiasA/B."""
-        value = self.send(self.builder.build_get_stig(axis)).parse_stig()
-        setattr(self.m, f"stig_{axis}", value)
-        return value
-
-    def set_stig(self, axis: str, value: float):
-        """Write stigmator X or Y in [-100, 100] %; return the readback or None.
-
-        The instrument truncates to an integer DAC code, so the readback may
-        differ slightly from the request.
-        """
-        resp = self.send(self.builder.build_set_stig(axis, value))
-        return self.get_stig(axis) if resp.is_ack_ok() else None
-
-    def get_stig_x(self) -> float:
-        return self.get_stig("x")
-
-    def get_stig_y(self) -> float:
-        return self.get_stig("y")
-
-    def set_stig_x(self, value: float):
-        return self.set_stig("x", value)
-
-    def set_stig_y(self, value: float):
-        return self.set_stig("y", value)
-
     def set_work_mode(self, mode: EnumCmdLevel):
         """
         设置设备工作模式
@@ -1479,7 +1568,11 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
             dict: Parsed JSON response from device
         """
         logger.debug(f"zem_rpc: {data}")
+        if self.m.protocol_ng is None or not self.m.protocol_ng.url:
+            raise ZemException.request_error("请先设置 JSON-RPC URL 或发现远程协议地址")
         content = req_util.req_post_json(self.m.protocol_ng.url, data)
+        if content is None:
+            raise ZemException.request_error("JSON-RPC HTTP 请求失败")
         return json.loads(content)
 
     def send(self, req: Request):
