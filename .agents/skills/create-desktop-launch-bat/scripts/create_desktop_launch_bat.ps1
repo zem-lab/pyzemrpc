@@ -34,7 +34,7 @@ if (-not (Test-Path -LiteralPath $destinationDirectory -PathType Container)) {
 }
 
 $template = Get-Content -Raw -LiteralPath $sourcePath
-$rootResolverPattern = '(?m)^for %%I in \("%~dp0\."\) do set "APP_DIR=%%~fI"\r?$'
+$rootResolverPattern = '(?m)^for %%I in \("%~dp0\."\) do set "APP_DIR=%%~fI"(?=\r?$)'
 $matches = [regex]::Matches($template, $rootResolverPattern)
 if ($matches.Count -ne 1) {
     throw 'ZEMrpc.bat does not contain the expected repository-root resolver.'
