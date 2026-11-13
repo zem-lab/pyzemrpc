@@ -266,6 +266,9 @@ class ZemModel(AppTreeNode):
     wd: float = Field(default=0, on_setattr=True)
     compress_a: float = Field(default=0.0, on_setattr=True)
     compress_b: float = Field(default=0.0, on_setattr=True)
+    ast: Tuple[int, int] | None = Field(default=None, on_setattr=True)
+    stig_x: float | None = Field(default=None, on_setattr=True)
+    stig_y: float | None = Field(default=None, on_setattr=True)
 
     hv_info: HvInfo = Field(default=None, on_setattr=True)
     is_open_gun: bool = Field(default=False, on_setattr=True)
@@ -1376,6 +1379,47 @@ class ZemRpcDevice(AppTreeNodeRequiredMixin):
         resp = self.send(self.builder.build_get_compress_b())
         self.m.compress_b = resp.parse_compress_b()
         return self.m.compress_b
+
+    def get_ast(self) -> Tuple[int, int]:
+        """Read stigmator A/B (image X/Y) as signed DAC codes."""
+        self.m.ast = self.send(self.builder.build_get_ast()).parse_ast()
+        return self.m.ast
+
+    def set_ast(self, a: int, b: int):
+        """Write both stigmator DAC codes; return the device readback or None.
+
+        The instrument writes the codes without clamping them to its configured
+        Min/MaxAstigBias range, so callers own the physical limit.
+        """
+        resp = self.send(self.builder.build_set_ast(a, b))
+        return self.get_ast() if resp.is_ack_ok() else None
+
+    def get_stig(self, axis: str) -> float:
+        """Read stigmator X or Y as a percentage of MaxAstigBiasA/B."""
+        value = self.send(self.builder.build_get_stig(axis)).parse_stig()
+        setattr(self.m, f"stig_{axis}", value)
+        return value
+
+    def set_stig(self, axis: str, value: float):
+        """Write stigmator X or Y in [-100, 100] %; return the readback or None.
+
+        The instrument truncates to an integer DAC code, so the readback may
+        differ slightly from the request.
+        """
+        resp = self.send(self.builder.build_set_stig(axis, value))
+        return self.get_stig(axis) if resp.is_ack_ok() else None
+
+    def get_stig_x(self) -> float:
+        return self.get_stig("x")
+
+    def get_stig_y(self) -> float:
+        return self.get_stig("y")
+
+    def set_stig_x(self, value: float):
+        return self.set_stig("x", value)
+
+    def set_stig_y(self, value: float):
+        return self.set_stig("y", value)
 
     def set_work_mode(self, mode: EnumCmdLevel):
         """

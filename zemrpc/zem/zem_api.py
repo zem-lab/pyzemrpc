@@ -202,6 +202,24 @@ class ZemApi(AppTreeNodeRequiredMixin, metaclass=ZemApiMeta):
             time.sleep(wait_stable_ms / 1000)
         return ret
 
+    def get_ast(self):
+        return self.device.get_ast()
+
+    def set_ast(self, a: int, b: int, wait_stable_ms=0):
+        ret = self.device.set_ast(a, b)
+        if ret is not None and wait_stable_ms:
+            time.sleep(wait_stable_ms / 1000)
+        return ret
+
+    def get_stig(self, axis: str):
+        return self.device.get_stig(axis)
+
+    def set_stig(self, axis: str, value: float, wait_stable_ms=0):
+        ret = self.device.set_stig(axis, value)
+        if ret is not None and wait_stable_ms:
+            time.sleep(wait_stable_ms / 1000)
+        return ret
+
     def set_ob_raw(self, ob: int, wait_stable_ms=0):
         """Write the exact unsigned 16-bit OB DAC value without WD conversion."""
         ret = self.device.set_ob_raw(ob)

@@ -24,6 +24,7 @@ from zemrpc.zem.conn.protocol import EnumCmd, EnumVideoStatus
 from .widgets.zem_img_viewer import ZemImgViewer
 from .widgets.nav_img_viewer import NavImgViewer
 from .widgets.stage_motion_parameters import StageMotionParametersTab
+from .widgets.astigmatism import AstigmatismTab
 from .zemrpc_win_ui import Ui_Form
 
 
@@ -131,6 +132,8 @@ class ZemRpcWidget(QWidget):
     def init_ui(self):
         self.stage_motion_parameters_tab = StageMotionParametersTab(self)
         self.ui.tab_modules.addTab(self.stage_motion_parameters_tab, "样品台运动参数")
+        self.astigmatism_tab = AstigmatismTab(self)
+        self.ui.tab_modules.addTab(self.astigmatism_tab, "像散")
         self.ui.tab_modules.setCurrentIndex(0)
         self.ui.ipt_hv.setRange(0, 30)
         self._init_cbox_cmds()

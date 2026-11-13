@@ -4,6 +4,7 @@
 
 import re
 import json
+import math
 import base64
 import collections
 import ipaddress
@@ -14,6 +15,7 @@ from loguru import logger
 from enum import Enum
 from dataclasses import dataclass
 from zemrpc.zem.scan_relay import validate_scan_relay_mask
+from zemrpc.zem.astigmatism import validate_ast_raw, validate_stig_pct
 from zemrpc.zem.software_info import SoftwareInfo
 
 from jgb.util import math_util, json_util
@@ -173,8 +175,8 @@ class EnumCmd(Enum):
     SetFisheyeFocus   = "SetFisheyeFocus",              True,  100,      EnumCmdLevel.BASIC,        "设置鱼眼对焦手柄值(0-65535)"
     SetBeamShift      = "SetBeamShift",                 True,  1_000,    EnumCmdLevel.ADVANCED,     "设置样品平面绝对束偏转(um)"
     SetRoiNav         = "SetRoiNav",                    True,  30_000,   EnumCmdLevel.ADVANCED,     "划区导航：居中并改变倍率"
-    GetAST            = "GetAST",                       False, 100,      EnumCmdLevel.BASIC,        "获取像散"
-    SetAST            = "SetAST",                       True,  100,      EnumCmdLevel.ADVANCED,     "设置像散"
+    GetAst            = "GetAst",                       False, 100,      EnumCmdLevel.BASIC,        "获取像散A/B DAC值"
+    SetAst            = "SetAst",                       True,  100,      EnumCmdLevel.ADVANCED,     "设置像散A/B DAC值"
     GetImgSz          = "GetImgSz",                     False, 100,      EnumCmdLevel.BASIC,        "获取图片尺寸"
     SetImgSz          = "SetImgSz",                     True,  100,      EnumCmdLevel.BASIC,        "设置图片尺寸"
     GetWindowPos      = "GetWindowPos",                 False, 100,      EnumCmdLevel.BASIC,        "获取小窗位置"
@@ -205,10 +207,10 @@ class EnumCmd(Enum):
     GetPixelSz        = "GetPixelSz",                   False, 100,      EnumCmdLevel.BASIC,        "获取像素尺寸um"
     RequestOpenVac    = "RequestOpenVac",               False, 100,      EnumCmdLevel.ADVANCED,     "请求结束换样" 
     RequestCloseVac   = "RequestCloseVac",              False, 100,      EnumCmdLevel.ADVANCED,     "请求开始换样"
-    SetStigX          = "SetStigX",                     True,  100,      EnumCmdLevel.ADVANCED,     "设置像散X"
-    GetStigX          = "GetStigX",                     False, 100,      EnumCmdLevel.BASIC,        "获取像散X"
-    SetStigY          = "SetStigY",                     True,  100,      EnumCmdLevel.ADVANCED,     "设置像散Y"
-    GetStigY          = "GetStigY",                     False, 100,      EnumCmdLevel.BASIC,        "获取像散Y"
+    SetStigX          = "SetStigX",                     True,  100,      EnumCmdLevel.ADVANCED,     "设置像散X百分比"
+    GetStigX          = "GetStigX",                     False, 100,      EnumCmdLevel.BASIC,        "获取像散X百分比"
+    SetStigY          = "SetStigY",                     True,  100,      EnumCmdLevel.ADVANCED,     "设置像散Y百分比"
+    GetStigY          = "GetStigY",                     False, 100,      EnumCmdLevel.BASIC,        "获取像散Y百分比"
     GetGunVac         = "GetGunVac",                    False, 100,      EnumCmdLevel.BASIC,        "获取枪头真空"
     GetSamVac         = "GetSamVac",                    False, 100,      EnumCmdLevel.BASIC,        "获取样品仓真空"
     AutoFocus         = "AutoFocus",                    False, 100,      EnumCmdLevel.ADVANCED,     "自动对焦"
@@ -262,6 +264,12 @@ class EnumCmd(Enum):
         return self.value[-1]
 
 # fmt: on
+
+
+def _stig_cmd(prefix: str, axis: str) -> EnumCmd:
+    if axis not in ("x", "y"):
+        raise ValueError("Stigmator axis must be 'x' or 'y'")
+    return EnumCmd[f"{prefix}Stig{axis.upper()}"]
 
 
 class EnumStatus(Enum):
@@ -581,6 +589,18 @@ class ProtocolBuilder:
 
     def build_get_compress_b(self):
         return self.build_get(EnumCmd.GetCompressB)
+
+    def build_get_ast(self):
+        return self.build_get(EnumCmd.GetAst)
+
+    def build_set_ast(self, a: int, b: int):
+        return self.build_set(EnumCmd.SetAst, f"{validate_ast_raw(a)},{validate_ast_raw(b)}")
+
+    def build_get_stig(self, axis: str):
+        return self.build_get(_stig_cmd("Get", axis))
+
+    def build_set_stig(self, axis: str, value: float):
+        return self.build_set(_stig_cmd("Set", axis), f"{validate_stig_pct(value):.6f}")
 
     def build_open_vac(self):
         return self.build_get(EnumCmd.OpenVAC)
@@ -905,6 +925,16 @@ class RespPacket(BaseResponse):
 
     def parse_compress_b(self) -> float:
         return float(self._parse_1())
+
+    def parse_ast(self) -> Tuple[int, int]:
+        a, b = self._parse_2()
+        return int(a), int(b)
+
+    def parse_stig(self) -> float:
+        value = float(self._parse_1())
+        if not math.isfinite(value):
+            raise ValueError("Invalid stigmator percentage readback")
+        return value
 
     def _parse_1(self):
         req, val, crc = self._re_1.findall(self.data_str)[0]

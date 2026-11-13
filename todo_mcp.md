@@ -22,7 +22,7 @@
 - [x] GetEDChanel - 获取电子信号通道
 - [x] GetRotation - 获取扫描场旋转
 - [x] GetOB - 获取物镜值
-- [x] GetAST - 获取像散
+- [x] GetAst - 获取像散
 - [x] GetStigX - 获取像散X
 - [x] GetStigY - 获取像散Y
 - [x] GetImgSz - 获取图片尺寸
