@@ -18,10 +18,22 @@
 4. 若提交后又修改会进入产物或影响构建的内容，必须重新提交并重建打包。不得仅修改 commit 元数据或发布清单来冒充新构建。
 5. 保留无关的未提交工作，不混入提交或产物，也不清理、重置或覆盖。工作区无法保持发布源码干净时，从独立的干净 checkout 或提交快照构建，并重新生成需要的忽略文件。
 
-临时开发构建可用于验证，但不能当作正式交付包。生成的 __commit__.py、wheel、日志等不必循环提交；上传、推送仍按用户实际授权执行。
+临时开发构建可用于验证，但不能当作正式交付包。生成的 __commit__.py、wheel、日志等不必循环提交。用户明确要求推送后，按下方「推送三个远端」一次推完，不得只推其中一个。
 
 旧发布脚本的 ConfirmedWorktree 仅是检查确认参数，绝不是允许打包未提交源码的豁免。旧文档或技能中允许混入未提交改动的说法已失效。
 
 注意仓库归属：真实电镜的 software.commit_id 是远程 Shell 的构建提交，SDK 必须原样解析，不能用本地 pyzemrpc 的 GIT_INFO 代替。VirtualZem 报告自己的 SDK 构建身份。跨项目交付时，各仓库分别先提交、再构建并记录各自的 commit。
+
+## 推送三个远端
+
+本约束由维护者于 2026-11-14 明确要求。用户要求推送本仓库时，同一批提交必须推到下面三个远端的对应分支，不能只推其中一个：
+
+| 远端 | 地址 |
+|---|---|
+| `origin` | `git@gitee.com:zeyou-anhui/pyzemrpc.git` |
+| `origin_dc000` | `ssh://git@gitlab.dc000.local:8072/software/pyzemrpc.git` |
+| `origin_github` | `git@github.com:zem-lab/pyzemrpc.git` |
+
+推送前先 `git fetch` 三个远端并核对分支关系。能快进就直接推；某个远端分叉时停下来说明差异，不得强推，也不得跳过该远端后宣称已经推送完成。未得到用户明确要求时不推送。
 
 相关说明：[软件版本与电镜 SN 接口](doc/software_info.md)、[Python 开发约定](CLAUDE.md)、[发布技能](.agents/skills/release-pyzemrpc/SKILL.md)。

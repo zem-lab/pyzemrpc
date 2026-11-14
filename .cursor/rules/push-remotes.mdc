@@ -1,0 +1,8 @@
+---
+description: 用户要求推送 pyzemrpc 时，同一批提交推到 origin、origin_dc000、origin_github
+alwaysApply: true
+---
+
+# 推送三个远端
+
+用户要求推送本仓库时，把同一分支推到 `origin`（Gitee）、`origin_dc000`（GitLab）和 `origin_github`（GitHub）。先 fetch 并核对能否快进。某个远端分叉时说明差异并停下，不跳过、不强推。用户没有明确要求时不推送。
